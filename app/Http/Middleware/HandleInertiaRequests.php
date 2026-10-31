@@ -2,7 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -40,7 +42,19 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
+                'customer' => Auth::guard('customer')->user()?->only(['id', 'name', 'email']),
             ],
+            'customerStatus' => fn () => $request->session()->get('customerStatus'),
+            'adminStatus' => fn () => $request->session()->get('adminStatus'),
+            'catalogProducts' => fn () => Product::query()->latest()->get()->map(fn (Product $product) => [
+                'id' => (string) $product->id,
+                'name' => $product->name,
+                'category' => $product->category,
+                'group' => $product->group,
+                'price' => (float) $product->price,
+                'description' => $product->description,
+                'image' => str_starts_with($product->image, 'http') ? $product->image : asset('storage/'.$product->image),
+            ])->values(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }
