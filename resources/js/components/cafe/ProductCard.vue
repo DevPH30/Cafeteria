@@ -5,6 +5,8 @@ export type CafeProduct = {
     category: 'coffee' | 'cupcakes' | 'news';
     group: string;
     price: number;
+    stock?: number;
+    minimumStock?: number;
     description: string;
     image: string;
 };

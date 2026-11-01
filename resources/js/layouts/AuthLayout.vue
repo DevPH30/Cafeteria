@@ -30,7 +30,7 @@ const { title = '', description = '' } = defineProps<{
             <nav class="main-nav" aria-label="Navegação principal">
                 <a href="/">início</a>
                 <a href="/produtos">produtos</a>
-                <a href="/pedidos">pedidos</a>
+                <a href="/encomendas">encomendas</a>
                 <a href="/contatos">contatos</a>
                 <a href="/sobre-nos">sobre nós</a>
             </nav>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router as inertiaRouter, useForm } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Pencil, Trash2 } from '@lucide/vue';
 import { useRoute, useRouter } from 'vue-router';
 import CalendarPicker from '@/components/cafe/CalendarPicker.vue';
@@ -14,11 +14,24 @@ import { logout } from '@/routes';
 const props = defineProps<{
     auth: {
         user: { id: number; name: string; email: string } | null;
-        customer: { id: number; name: string; email: string } | null;
+        customer: {
+            id: number;
+            name: string;
+            email: string;
+            phone: string;
+            address: string;
+            neighborhood: string;
+            city: string;
+            state: string;
+            zip_code: string;
+        } | null;
     };
     customerStatus?: string | null;
     adminStatus?: string | null;
     catalogProducts?: CafeProduct[];
+    latestCustomerOrder?: CafeOrder | null;
+    customerOrders?: CafeOrder[];
+    adminOrders?: CafeOrder[];
 }>();
 
 type Category = CafeProduct['category'];
@@ -36,11 +49,13 @@ type CafeOrder = {
     status: string;
     total: number;
     fulfillment: 'pickup' | 'delivery';
+    createdAt?: string;
     date?: string;
     time?: string;
     message?: string;
     request?: boolean;
     paymentMethod?: string;
+    deliveryAddress?: string;
     items: OrderItem[];
 };
 type InventoryItem = {
@@ -62,120 +77,12 @@ type StoredCafeState = {
     orders: CafeOrder[];
     customProducts: CafeProduct[];
     pendingOrder: PickupRequest | null;
+    settings?: {
+        deliveryFee: number;
+    };
 };
 
 const storageKey = 'cafe-aroma-state-v1';
-const initialProducts: CafeProduct[] = [
-    {
-        id: 'coffee',
-        name: 'Coffee',
-        category: 'coffee',
-        group: 'Cafés',
-        price: 30,
-        description: 'Espresso encorpado, extraído na hora.',
-        image: '/images/cafe/hero-coffee.png',
-    },
-    {
-        id: 'latte',
-        name: 'Latte Macchiato',
-        category: 'coffee',
-        group: 'Cafés',
-        price: 50,
-        description: 'Leite vaporizado, espresso e uma camada cremosa.',
-        image: '/images/cafe/latte.png',
-    },
-    {
-        id: 'mocha',
-        name: 'Mocha',
-        category: 'coffee',
-        group: 'Cafés',
-        price: 30,
-        description: 'Café, chocolate e leite cremoso.',
-        image: '/images/cafe/iced-coffee.png',
-    },
-    {
-        id: 'coffee-milk',
-        name: 'Coffee with milk',
-        category: 'coffee',
-        group: 'Cafés',
-        price: 35,
-        description: 'Café especial com leite vaporizado.',
-        image: '/images/cafe/espresso.png',
-    },
-    {
-        id: 'pistachio',
-        name: 'Buttery Pistachio',
-        category: 'cupcakes',
-        group: 'Cupcakes',
-        price: 60,
-        description: 'Cupcake macio com pistache e cobertura delicada.',
-        image: '/images/cafe/pistachio-cupcake.png',
-    },
-    {
-        id: 'belgian',
-        name: 'Belgian Chocolate',
-        category: 'cupcakes',
-        group: 'Cupcakes',
-        price: 50,
-        description: 'Chocolate belga, massa leve e cobertura cremosa.',
-        image: '/images/cafe/chocolate-cupcake.png',
-    },
-    {
-        id: 'chocolate',
-        name: 'Belgian Chocolate 60',
-        category: 'cupcakes',
-        group: 'Cupcakes',
-        price: 60,
-        description: 'Chocolate intenso para os apaixonados por cacau.',
-        image: '/images/cafe/chocolate-cupcake.png',
-    },
-    {
-        id: 'lemon',
-        name: 'Sicilian Lemon and Blueberry',
-        category: 'cupcakes',
-        group: 'Cupcakes',
-        price: 70,
-        description: 'Limão siciliano, mirtilo e cobertura artesanal.',
-        image: '/images/cafe/blueberry-cupcake.png',
-    },
-    {
-        id: 'iced-latte',
-        name: 'Iced Latte',
-        category: 'news',
-        group: 'Novidades',
-        price: 30,
-        description: 'Espresso gelado com leite e muito sabor.',
-        image: '/images/cafe/iced-coffee.png',
-    },
-    {
-        id: 'cappuccino',
-        name: 'Cappuccino',
-        category: 'news',
-        group: 'Novidades',
-        price: 25,
-        description: 'Cappuccino aveludado com latte art.',
-        image: '/images/cafe/cappuccino.png',
-    },
-    {
-        id: 'caramel',
-        name: 'Mocha with Caramel',
-        category: 'news',
-        group: 'Novidades',
-        price: 30,
-        description: 'Mocha com caramelo e chantilly feito na casa.',
-        image: '/images/cafe/latte.png',
-    },
-    {
-        id: 'iced-coffee',
-        name: 'Iced Coffee',
-        category: 'news',
-        group: 'Novidades',
-        price: 45,
-        description: 'Café especial servido gelado.',
-        image: '/images/cafe/iced-coffee.png',
-    },
-];
-
 const initialInventory: InventoryItem[] = [
     { name: 'Buttery Pistachio 60', stock: 120, minimum: 20 },
     { name: 'Belgian Chocolate 60', stock: 60, minimum: 20 },
@@ -216,6 +123,7 @@ const allowedPages = [
     'pedidos',
     'acompanhar',
     'checkout',
+    'conta',
     'sobre',
     'admin',
 ] as const;
@@ -228,6 +136,7 @@ const pageRouteNames: Record<CafePage, string> = {
     pedidos: 'orders',
     acompanhar: 'order-tracking',
     checkout: 'checkout',
+    conta: 'customer-account',
     sobre: 'about',
     admin: 'cafe-admin',
 };
@@ -238,10 +147,7 @@ const page = computed(
         allowedPages.find((candidate) => candidate === route.meta.page) ??
         'inicio',
 );
-const products = ref<CafeProduct[]>([
-    ...initialProducts,
-    ...(props.catalogProducts ?? []),
-]);
+const products = ref<CafeProduct[]>([...(props.catalogProducts ?? [])]);
 const customProducts = ref<CafeProduct[]>(props.catalogProducts ?? []);
 const cart = ref<CartItem[]>([]);
 const inventory = ref<InventoryItem[]>([...initialInventory]);
@@ -252,6 +158,8 @@ const searchQuery = ref('');
 const searchOpen = ref(false);
 const selectedDate = ref<string | null>(null);
 const fulfillment = ref<'pickup' | 'delivery'>('delivery');
+const deliveryAddress = ref('');
+const deliveryFeeValue = ref(10);
 const paymentMethod = ref('pickup');
 const coupon = ref('');
 const couponApplied = ref(false);
@@ -260,17 +168,53 @@ const loginForm = useForm({
     email: '',
     password: '',
 });
+const returnToCheckoutAfterLogin = ref(false);
+const returnToAccountAfterLogin = ref(false);
+const accountTab = ref<'cadastro' | 'pedidos' | 'encomendas'>('cadastro');
+const profileForm = useForm({
+    name: props.auth.customer?.name ?? '',
+    email: props.auth.customer?.email ?? '',
+    phone: props.auth.customer?.phone ?? '',
+    zip_code: props.auth.customer?.zip_code ?? '',
+    neighborhood: props.auth.customer?.neighborhood ?? '',
+    city: props.auth.customer?.city ?? '',
+    state: props.auth.customer?.state ?? '',
+    address: props.auth.customer?.address ?? '',
+});
 const editingProduct = ref<CafeProduct | null>(null);
 const productImageInput = ref<HTMLInputElement | null>(null);
 const productForm = useForm({
     name: '',
+    description: '',
     price: null as number | null,
     category: 'coffee' as Category,
     image: null as File | null,
 });
-const inventoryName = ref('');
-const inventoryStock = ref<number | null>(null);
+const stockQuantities = ref<Record<string, number>>({});
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+
+function getCustomerAddress() {
+    const customer = props.auth.customer;
+    if (!customer) return '';
+
+    return [
+        customer.address,
+        customer.neighborhood,
+        `${customer.city} - ${customer.state}`,
+        `CEP ${customer.zip_code}`,
+    ].join(', ');
+}
+
+watch(
+    () => props.auth.customer,
+    (customer) => {
+        if (customer && !deliveryAddress.value) {
+            deliveryAddress.value = getCustomerAddress();
+        }
+        if (customer) fillProfileForm();
+    },
+    { immediate: true },
+);
 
 const cartCount = computed(() =>
     cart.value.reduce((total, item) => total + item.quantity, 0),
@@ -308,16 +252,20 @@ const discount = computed(() =>
     couponApplied.value ? subtotal.value * 0.1 : 0,
 );
 const deliveryFee = computed(() =>
-    cartCount.value > 0 && fulfillment.value === 'delivery' ? 10 : 0,
+    cartCount.value > 0 && fulfillment.value === 'delivery'
+        ? deliveryFeeValue.value
+        : 0,
 );
 const total = computed(() =>
     Math.max(0, subtotal.value + deliveryFee.value - discount.value),
 );
 const latestOrder = computed(
-    () => orders.value[orders.value.length - 1] ?? null,
+    () => props.latestCustomerOrder ?? null,
 );
 const trackingSteps = computed(() =>
-    latestOrder.value?.fulfillment === 'pickup'
+    latestOrder.value?.status === 'Cancelado'
+        ? ['Pedido Cancelado']
+        : latestOrder.value?.fulfillment === 'pickup'
         ? [
               'Pedido Recebido',
               'Em Produção',
@@ -327,7 +275,8 @@ const trackingSteps = computed(() =>
         : ['Pedido Recebido', 'Em Produção', 'Saiu para Entrega', 'Entregue'],
 );
 const trackingStatus = computed(() => {
-    const status = latestOrder.value?.status ?? 'Em Produção';
+    const status = latestOrder.value?.status;
+    if (!status) return '';
 
     if (latestOrder.value?.fulfillment === 'pickup') {
         if (status === 'Pronto para Entrega') return 'Está pronto o pedido';
@@ -339,8 +288,65 @@ const trackingStatus = computed(() => {
 const trackingStepIndex = computed(() =>
     Math.max(0, trackingSteps.value.indexOf(trackingStatus.value)),
 );
-const adminOrders = computed(() =>
-    orders.value.length ? orders.value : demoOrders,
+function getLocalDate(): string {
+    const date = new Date();
+    return formatLocalDate(date);
+}
+
+function formatLocalDate(date: Date): string {
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${date.getFullYear()}-${month}-${day}`;
+}
+
+const selectedOrderDate = ref(getLocalDate());
+const orderSort = ref<'newest' | 'oldest'>('newest');
+const selectedOrderStatus = ref('');
+const orderNumberSearch = ref('');
+watch(page, (currentPage, previousPage) => {
+    if (currentPage === 'admin' && previousPage !== 'admin') {
+        selectedOrderDate.value = getLocalDate();
+        orderSort.value = 'newest';
+        selectedOrderStatus.value = '';
+        orderNumberSearch.value = '';
+    }
+});
+const adminOrders = computed(() => {
+    const orders = (props.adminOrders ?? []).filter((order) => {
+        const matchesDate =
+            !selectedOrderDate.value ||
+            (order.createdAt &&
+                formatLocalDate(new Date(order.createdAt)) ===
+                    selectedOrderDate.value);
+        const matchesStatus =
+            !selectedOrderStatus.value ||
+            order.status === selectedOrderStatus.value;
+        const matchesNumber =
+            !orderNumberSearch.value.trim() ||
+            order.number.includes(orderNumberSearch.value.trim());
+
+        return Boolean(matchesDate && matchesStatus && matchesNumber);
+    });
+
+    return [...orders].sort((first, second) => {
+        const firstTime = first.createdAt
+            ? new Date(first.createdAt).getTime()
+            : 0;
+        const secondTime = second.createdAt
+            ? new Date(second.createdAt).getTime()
+            : 0;
+
+        return orderSort.value === 'newest'
+            ? secondTime - firstTime
+            : firstTime - secondTime;
+    });
+});
+const lowStockProducts = computed(() =>
+    customProducts.value.filter(
+        (product) =>
+            (product.stock ?? 0) <= (product.minimumStock ?? 20),
+    ),
 );
 
 function isCafeProduct(value: unknown): value is CafeProduct {
@@ -400,7 +406,10 @@ function readSavedState() {
             cart.value = state.cart.filter(isCartItem);
         }
         if (Array.isArray(state.inventory)) {
-            inventory.value = state.inventory.filter(isInventoryItem);
+            inventory.value = state.inventory.filter(
+                (item): item is InventoryItem =>
+                    isInventoryItem(item) && !item.productId,
+            );
         }
         if (Array.isArray(state.orders)) {
             orders.value = state.orders.filter(
@@ -411,6 +420,15 @@ function readSavedState() {
                     typeof (order as CafeOrder).status === 'string' &&
                     Array.isArray((order as CafeOrder).items),
             );
+        }
+        if (
+            state.settings &&
+            typeof state.settings === 'object' &&
+            typeof state.settings.deliveryFee === 'number' &&
+            Number.isFinite(state.settings.deliveryFee) &&
+            state.settings.deliveryFee >= 0
+        ) {
+            deliveryFeeValue.value = state.settings.deliveryFee;
         }
         if (
             state.pendingOrder &&
@@ -439,6 +457,9 @@ function persistState() {
         orders: orders.value,
         customProducts: customProducts.value,
         pendingOrder: pendingOrder.value,
+        settings: {
+            deliveryFee: deliveryFeeValue.value,
+        },
     };
 
     try {
@@ -450,13 +471,29 @@ function persistState() {
 }
 
 function navigate(target: string, category?: 'all' | Category) {
-    const destination =
+    let destination =
         allowedPages.find((candidate) => candidate === target) ?? 'inicio';
 
     if (category) activeCategory.value = category;
+    if (target === 'conta' && !props.auth.customer) {
+        returnToAccountAfterLogin.value = true;
+        showToast('Entre na sua conta para acessar seus dados.');
+        destination = 'inicio';
+    }
     searchOpen.value = false;
     void router.push({ name: pageRouteNames[destination] });
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function trackOrder(number: string) {
+    await router.push({
+        name: pageRouteNames.acompanhar,
+        query: { order: number },
+    });
+    inertiaRouter.reload({
+        preserveState: false,
+        preserveScroll: false,
+    });
 }
 
 function showToast(message: string) {
@@ -472,6 +509,20 @@ function formatPrice(value: number) {
         style: 'currency',
         currency: 'BRL',
     });
+}
+
+function saveSettings() {
+    if (
+        !Number.isFinite(deliveryFeeValue.value) ||
+        deliveryFeeValue.value < 0 ||
+        deliveryFeeValue.value > 100000
+    ) {
+        showToast('Informe uma taxa de entrega válida.');
+        return;
+    }
+
+    persistState();
+    showToast('Configurações salvas com sucesso.');
 }
 
 function addToCart(product: CafeProduct) {
@@ -505,12 +556,56 @@ function submitSearch() {
 
 function submitLogin() {
     loginForm.post('/cliente/login', {
-        onSuccess: () => loginForm.reset('password'),
+        onSuccess: () => {
+            loginForm.reset('password');
+            if (returnToCheckoutAfterLogin.value) {
+                returnToCheckoutAfterLogin.value = false;
+                navigate('checkout');
+            }
+            if (returnToAccountAfterLogin.value) {
+                returnToAccountAfterLogin.value = false;
+                navigate('conta');
+            }
+        },
     });
 }
 
 function logoutCustomer() {
     inertiaRouter.post('/cliente/logout');
+}
+
+function openAccount() {
+    if (!props.auth.customer) {
+        returnToAccountAfterLogin.value = true;
+        showToast('Entre na sua conta para acessar seus dados.');
+        navigate('inicio');
+        return;
+    }
+
+    navigate('conta');
+}
+
+function fillProfileForm() {
+    const customer = props.auth.customer;
+    if (!customer) return;
+
+    profileForm.name = customer.name;
+    profileForm.email = customer.email;
+    profileForm.zip_code = customer.zip_code;
+    profileForm.neighborhood = customer.neighborhood;
+    profileForm.city = customer.city;
+    profileForm.state = customer.state;
+    profileForm.address = customer.address;
+}
+
+function submitProfile() {
+    profileForm.put('/cliente/perfil', {
+        preserveScroll: true,
+        onSuccess: () => {
+            profileForm.clearErrors();
+            showToast('Dados cadastrais atualizados.');
+        },
+    });
 }
 
 function submitPickupRequest(event: SubmitEvent) {
@@ -573,53 +668,48 @@ function confirmOrder() {
         return;
     }
 
-    const order: CafeOrder = {
-        number: String(Date.now()).slice(-6),
-        name: pendingOrder.value?.name || loginForm.email || 'Cliente',
-        email: pendingOrder.value?.email,
-        message: pendingOrder.value?.message,
-        date: pendingOrder.value?.date,
-        time: pendingOrder.value?.time,
-        request: Boolean(pendingOrder.value),
-        fulfillment: fulfillment.value,
-        status: 'Em Produção',
-        total: total.value,
+    if (!props.auth.customer) {
+        returnToCheckoutAfterLogin.value = true;
+        showToast('Entre na sua conta para finalizar o pedido.');
+        navigate('inicio');
+        return;
+    }
+
+    inertiaRouter.post('/cliente/pedidos', {
         items: cartLines.value.map(({ product, quantity }) => ({
-            id: product.id,
-            name: product.name,
-            price: product.price,
+            id: Number(product.id),
             quantity,
         })),
-        paymentMethod: paymentMethod.value,
-    };
-
-    orders.value.push(order);
-    cart.value = [];
-    pendingOrder.value = null;
-    couponApplied.value = false;
-    coupon.value = '';
-    try {
-        sessionStorage.removeItem('cafe-aroma-coupon');
-    } catch (error) {
-        console.warn('Não foi possível limpar o cupom da sessão.', error);
-    }
-    persistState();
-    navigate('acompanhar');
-    showToast(`Pedido #${order.number} confirmado. Acompanhe o andamento.`);
-}
-
-function addInventoryItem() {
-    if (!inventoryName.value.trim() || inventoryStock.value === null) return;
-
-    inventory.value.push({
-        name: inventoryName.value.trim(),
-        stock: inventoryStock.value,
-        minimum: 20,
+        fulfillment: fulfillment.value,
+        payment_method: paymentMethod.value,
+        delivery_fee: deliveryFee.value,
+        address:
+            fulfillment.value === 'delivery'
+                ? deliveryAddress.value.trim()
+                : undefined,
+        scheduled_date: pendingOrder.value?.date,
+        scheduled_time: pendingOrder.value?.time,
+        message: pendingOrder.value?.message,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            cart.value = [];
+            pendingOrder.value = null;
+            couponApplied.value = false;
+            coupon.value = '';
+            try {
+                sessionStorage.removeItem('cafe-aroma-coupon');
+            } catch (error) {
+                console.warn('Não foi possível limpar o cupom da sessão.', error);
+            }
+            persistState();
+            navigate('acompanhar');
+        },
+        onError: (errors) => {
+            const message = Object.values(errors)[0];
+            if (message) showToast(String(message));
+        },
     });
-    inventoryName.value = '';
-    inventoryStock.value = null;
-    persistState();
-    showToast('Produto adicionado ao estoque.');
 }
 
 function changeStock(index: number, amount: number) {
@@ -628,6 +718,31 @@ function changeStock(index: number, amount: number) {
 
     item.stock = Math.max(0, item.stock + amount);
     persistState();
+}
+
+function updateProductStock(
+    product: CafeProduct,
+    action: 'add' | 'remove',
+    quantityOverride?: number,
+) {
+    const quantity = quantityOverride ?? stockQuantities.value[product.id] ?? 1;
+    if (!Number.isInteger(quantity) || quantity < 1) {
+        showToast('Informe uma quantidade inteira maior que zero.');
+        return;
+    }
+
+    inertiaRouter.patch(
+        `/admin/produtos/${product.id}/estoque`,
+        { action, quantity },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                customProducts.value = [...(props.catalogProducts ?? [])];
+                products.value = [...customProducts.value];
+                stockQuantities.value[product.id] = 1;
+            },
+        },
+    );
 }
 
 function removeInventoryItem(index: number) {
@@ -654,30 +769,11 @@ function addProductToCatalog() {
                 forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => {
-                    const productName = productForm.name;
                     customProducts.value = [...(props.catalogProducts ?? [])];
-                    products.value = [
-                        ...initialProducts,
-                        ...customProducts.value,
-                    ];
-                    if (
-                        !editingProduct.value &&
-                        customProducts.value.some(
-                            (product) => product.name === productName,
-                        )
-                    ) {
-                        const product = customProducts.value.find(
-                            (entry) => entry.name === productName,
-                        );
-                        if (product) {
-                            inventory.value.push({
-                                name: `${product.name} ${product.price}`,
-                                stock: 0,
-                                minimum: 20,
-                                productId: product.id,
-                            });
-                        }
-                    }
+                    products.value = [...customProducts.value];
+                    inventory.value = inventory.value.filter(
+                        (item) => !item.productId,
+                    );
                     editingProduct.value = null;
                     productForm.reset();
                     if (productImageInput.value) {
@@ -692,6 +788,7 @@ function addProductToCatalog() {
 function editProduct(product: CafeProduct) {
     editingProduct.value = product;
     productForm.name = product.name;
+    productForm.description = product.description;
     productForm.price = product.price;
     productForm.category = product.category;
     productForm.image = null;
@@ -710,7 +807,7 @@ function removeCustomProduct(product: CafeProduct) {
         preserveScroll: true,
         onSuccess: () => {
             customProducts.value = [...(props.catalogProducts ?? [])];
-            products.value = [...initialProducts, ...customProducts.value];
+            products.value = [...customProducts.value];
             inventory.value = inventory.value.filter(
                 (item) => item.productId !== product.id,
             );
@@ -720,15 +817,16 @@ function removeCustomProduct(product: CafeProduct) {
     });
 }
 
-function updateOrderStatus(index: number, status: string) {
-    if (!orders.value.length)
-        orders.value = demoOrders.map((order) => ({ ...order }));
-    const order = orders.value[index];
+function updateOrderStatus(order: CafeOrder, status: string) {
     if (!order) return;
 
-    order.status = status;
-    persistState();
-    showToast(`Status do pedido #${order.number} atualizado.`);
+    inertiaRouter.patch(`/admin/pedidos/${order.number}/status`, { status }, {
+        preserveScroll: true,
+        onError: (errors) => {
+            const message = Object.values(errors)[0];
+            if (message) showToast(String(message));
+        },
+    });
 }
 
 function handlePaymentMethodChange() {
@@ -931,11 +1029,11 @@ onBeforeUnmount(() => {
                         </a>
                         <a
                             class="category-card card"
-                            href="/pedidos"
+                            href="/encomendas"
                             @click.prevent="navigate('pedidos')"
                         >
                             <div>
-                                <strong>Faça seu pedido</strong>
+                                <strong>Faça sua encomenda</strong>
                                 <span>Escolha o melhor horário</span>
                             </div>
                             <span class="category-icon">♡</span>
@@ -981,7 +1079,11 @@ onBeforeUnmount(() => {
                     />
                 </div>
                 <p v-else class="notice">
-                    Nenhum produto encontrado para “{{ searchQuery }}”.
+                    {{
+                        customProducts.length
+                            ? `Nenhum produto encontrado para “${searchQuery}”.`
+                            : 'Nenhum produto cadastrado no momento.'
+                    }}
                 </p>
             </section>
 
@@ -1052,7 +1154,7 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="page === 'pedidos'" class="page-wrap">
-                <h1 class="page-title">Pedidos</h1>
+                <h1 class="page-title">Encomendas</h1>
                 <div class="order-layout">
                     <form
                         class="order-form card form-grid"
@@ -1139,14 +1241,12 @@ onBeforeUnmount(() => {
                 <h1 class="page-title">
                     Acompanhar pedido <span aria-hidden="true">♧</span>
                 </h1>
-                <div class="tracking-panel card">
+                <div v-if="latestOrder" class="tracking-panel card">
                     <div class="tracking-top">
                         <div>
                             <span class="eyebrow">Café Aroma</span>
                             <h2>
-                                Status do pedido #{{
-                                    latestOrder?.number ?? '12345'
-                                }}
+                                Status do pedido #{{ latestOrder.number }}
                             </h2>
                         </div>
                         <span class="status-pill">{{ trackingStatus }}</span>
@@ -1194,43 +1294,34 @@ onBeforeUnmount(() => {
                                 </div>
                             </template>
                             <div v-else class="summary-line">
-                                <span>
-                                    {{
-                                        latestOrder?.request
-                                            ? 'Pedido agendado'
-                                            : 'Buttery Pistachio 60 × 2'
-                                    }}
-                                </span>
-                                <span>
-                                    {{
-                                        latestOrder?.request
-                                            ? 'A confirmar'
-                                            : formatPrice(60)
-                                    }}
-                                </span>
+                                <span>Itens do pedido não disponíveis</span>
                             </div>
                             <div class="summary-line">
                                 <span>Total</span>
-                                <span>
-                                    {{
-                                        latestOrder
-                                            ? formatPrice(latestOrder.total)
-                                            : formatPrice(110)
-                                    }}
-                                </span>
+                                <span>{{ formatPrice(latestOrder.total) }}</span>
                             </div>
                             <p class="muted small">
                                 {{
-                                    latestOrder?.date
+                                    latestOrder.date
                                         ? `Retirada: ${latestOrder.date}${latestOrder.time ? ` às ${latestOrder.time}` : ''}`
-                                        : latestOrder?.fulfillment === 'pickup'
+                                        : latestOrder.fulfillment === 'pickup'
                                           ? 'Retirada na loja'
-                                          : 'Entrega: Rua do Aroma, 123'
-                                }}<br />
-                                Previsão: hoje, em breve
+                                          : `Entrega: ${latestOrder.deliveryAddress ?? 'Endereço informado no pedido'}`
+                                }}
                             </p>
                         </aside>
                     </div>
+                </div>
+                <div v-else class="empty-state card">
+                    <h2>Nenhum pedido realizado</h2>
+                    <p>Faça um pedido para acompanhar o status por aqui.</p>
+                    <button
+                        class="button button-dark"
+                        type="button"
+                        @click="navigate('produtos')"
+                    >
+                        Ver produtos
+                    </button>
                 </div>
             </section>
 
@@ -1503,6 +1594,23 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                             </div>
+                            <div
+                                v-if="fulfillment === 'delivery' && props.auth.customer"
+                                class="field"
+                            >
+                                <label for="delivery-address">
+                                    Endereço de entrega
+                                </label>
+                                <input
+                                    id="delivery-address"
+                                    v-model="deliveryAddress"
+                                    maxlength="700"
+                                    required
+                                />
+                                <span class="field-help">
+                                    Você pode alterar o endereço para esta entrega.
+                                </span>
+                            </div>
                             <div class="notice">
                                 Esta é uma demonstração de interface. Não
                                 informe dados reais de pagamento: nenhuma
@@ -1530,6 +1638,114 @@ onBeforeUnmount(() => {
                         </section>
                     </form>
                 </div>
+            </section>
+
+            <section v-else-if="page === 'conta'" class="page-wrap customer-account">
+                <template v-if="!props.auth.customer">
+                    <h1 class="page-title">Minha conta</h1>
+                    <div class="customer-auth-card card">
+                        <p>Entre na sua conta para acessar seus dados e pedidos.</p>
+                        <button class="button button-dark" type="button" @click="navigate('inicio')">
+                            Acessar login
+                        </button>
+                    </div>
+                </template>
+                <template v-else>
+                <div class="account-heading">
+                    <div>
+                        <span class="eyebrow">área do cliente</span>
+                        <h1 class="page-title">Minha conta</h1>
+                    </div>
+                    <button class="button" type="button" @click="logoutCustomer">
+                        Sair da conta
+                    </button>
+                </div>
+                <div class="account-tabs" role="tablist" aria-label="Seções da conta">
+                    <button
+                        v-for="tab in [
+                            { id: 'cadastro', label: 'Cadastro' },
+                            { id: 'pedidos', label: 'Pedidos' },
+                            { id: 'encomendas', label: 'Encomendas' },
+                        ]"
+                        :key="tab.id"
+                        class="account-tab"
+                        :class="{ active: accountTab === tab.id }"
+                        type="button"
+                        role="tab"
+                        :aria-selected="accountTab === tab.id"
+                        @click="
+                            accountTab = tab.id as
+                                'cadastro' | 'pedidos' | 'encomendas'
+                        "
+                    >
+                        {{ tab.label }}
+                    </button>
+                </div>
+                <section v-if="accountTab === 'cadastro'" class="account-panel card">
+                    <h2>Dados cadastrais</h2>
+                    <form class="form-grid" @submit.prevent="submitProfile">
+                        <div class="field">
+                            <label for="profile-name">Nome</label>
+                            <input id="profile-name" v-model="profileForm.name" required />
+                            <span v-if="profileForm.errors.name" class="customer-field-error">{{ profileForm.errors.name }}</span>
+                        </div>
+                        <div class="field">
+                            <label for="profile-email">E-mail</label>
+                            <input id="profile-email" v-model="profileForm.email" type="email" required />
+                            <span v-if="profileForm.errors.email" class="customer-field-error">{{ profileForm.errors.email }}</span>
+                        </div>
+                        <div class="field">
+                            <label for="profile-phone">Telefone</label>
+                            <input id="profile-phone" v-model="profileForm.phone" required />
+                            <span v-if="profileForm.errors.phone" class="customer-field-error">{{ profileForm.errors.phone }}</span>
+                        </div>
+                        <div class="field">
+                            <label for="profile-zip">CEP</label>
+                            <input id="profile-zip" v-model="profileForm.zip_code" required />
+                            <span v-if="profileForm.errors.zip_code" class="customer-field-error">{{ profileForm.errors.zip_code }}</span>
+                        </div>
+                        <div class="field">
+                            <label for="profile-address">Endereço</label>
+                            <input id="profile-address" v-model="profileForm.address" required />
+                        </div>
+                        <div class="field">
+                            <label for="profile-neighborhood">Bairro</label>
+                            <input id="profile-neighborhood" v-model="profileForm.neighborhood" required />
+                        </div>
+                        <div class="field">
+                            <label for="profile-city">Cidade</label>
+                            <input id="profile-city" v-model="profileForm.city" required />
+                        </div>
+                        <div class="field">
+                            <label for="profile-state">Estado</label>
+                            <input id="profile-state" v-model="profileForm.state" maxlength="2" required />
+                        </div>
+                        <button class="button button-dark" type="submit" :disabled="profileForm.processing">
+                            {{ profileForm.processing ? 'Salvando...' : 'Salvar alterações' }}
+                        </button>
+                    </form>
+                </section>
+                <section v-else-if="accountTab === 'pedidos'" class="account-panel card">
+                    <h2>Pedidos realizados</h2>
+                    <div v-if="props.customerOrders?.length" class="customer-orders">
+                        <div v-for="order in props.customerOrders" :key="order.number" class="customer-order-row">
+                            <div>
+                                <strong>Pedido #{{ order.number }}</strong>
+                                <span class="muted small">{{ order.status }}</span>
+                            </div>
+                            <strong>{{ formatPrice(order.total) }}</strong>
+                            <button class="button button-small" type="button" @click="trackOrder(order.number)">
+                                Acompanhar
+                            </button>
+                        </div>
+                    </div>
+                    <p v-else class="muted">Você ainda não realizou pedidos.</p>
+                </section>
+                <section v-else class="account-panel card">
+                    <h2>Encomendas</h2>
+                    <p class="muted">Nenhuma encomenda disponível no momento.</p>
+                </section>
+                </template>
             </section>
 
             <section v-else-if="page === 'sobre'" class="page-wrap">
@@ -1601,7 +1817,7 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
                 <div class="admin-grid">
-                    <section class="admin-card card">
+                    <section class="admin-card card reports-admin-card">
                         <h2>Relatórios administrativos</h2>
                         <div class="chart">
                             <svg
@@ -1654,12 +1870,52 @@ onBeforeUnmount(() => {
                             </svg>
                         </div>
                     </section>
-                    <section class="admin-card card">
+                    <section class="admin-card card settings-admin-card">
+                        <h2>Configurações</h2>
+                        <form
+                            class="form-grid"
+                            @submit.prevent="saveSettings"
+                        >
+                            <div class="field">
+                                <label for="delivery-fee">
+                                    Taxa de entrega (R$)
+                                </label>
+                                <input
+                                    id="delivery-fee"
+                                    v-model.number="deliveryFeeValue"
+                                    type="number"
+                                    min="0"
+                                    max="100000"
+                                    step="0.01"
+                                    required
+                                />
+                                <span class="field-help">
+                                    Valor aplicado aos pedidos com entrega.
+                                </span>
+                            </div>
+                            <button
+                                class="button button-dark"
+                                type="submit"
+                            >
+                                Salvar configurações
+                            </button>
+                        </form>
+                    </section>
+                    <section class="admin-card card stock-admin-card">
                         <h2>Gestão de estoque</h2>
+                        <div
+                            v-if="lowStockProducts.length"
+                            class="stock-alert"
+                            role="alert"
+                        >
+                            <strong>Alerta de estoque mínimo:</strong>
+                            {{ lowStockProducts.length }} produto(s) precisam
+                            de reposição.
+                        </div>
                         <div class="inventory-row eyebrow">
                             <span>Item</span>
                             <span>Estoque</span>
-                            <span>Alerta mín.</span>
+                            <span>Quantidade mínima</span>
                             <span>Ações</span>
                         </div>
                         <div
@@ -1705,30 +1961,50 @@ onBeforeUnmount(() => {
                                 </button>
                             </span>
                         </div>
-                        <form
-                            class="admin-form"
-                            @submit.prevent="addInventoryItem"
+                        <div
+                            v-for="product in customProducts"
+                            :key="`catalog-stock-${product.id}`"
+                            class="inventory-row"
                         >
-                            <input
-                                v-model="inventoryName"
-                                placeholder="Produto"
-                                aria-label="Nome do produto"
-                                required
-                            />
-                            <input
-                                v-model.number="inventoryStock"
-                                type="number"
-                                min="0"
-                                placeholder="Estoque"
-                                aria-label="Quantidade em estoque"
-                                required
-                            />
-                            <button class="button button-small" type="submit">
-                                Adicionar
-                            </button>
-                        </form>
+                            <span>{{ product.name }}</span>
+                            <span>{{ product.stock ?? 0 }}</span>
+                            <span
+                                :class="{
+                                    'stock-low':
+                                        (product.stock ?? 0) <=
+                                        (product.minimumStock ?? 20),
+                                }"
+                            >
+                                {{
+                                    (product.stock ?? 0) <=
+                                    (product.minimumStock ?? 20)
+                                        ? 'Baixo estoque'
+                                        : `mín. ${product.minimumStock ?? 20}`
+                                }}
+                            </span>
+                            <span class="admin-actions">
+                                <button
+                                    type="button"
+                                    aria-label="Adicionar uma unidade ao estoque"
+                                    @click="
+                                        updateProductStock(product, 'add', 1)
+                                    "
+                                >
+                                    +
+                                </button>
+                                <button
+                                    type="button"
+                                    aria-label="Remover uma unidade do estoque"
+                                    @click="
+                                        updateProductStock(product, 'remove', 1)
+                                    "
+                                >
+                                    −
+                                </button>
+                            </span>
+                        </div>
                     </section>
-                    <section class="admin-card card">
+                    <section class="admin-card card product-form-admin-card">
                         <h2>Cadastro de produto</h2>
                         <form
                             class="form-grid"
@@ -1750,6 +2026,28 @@ onBeforeUnmount(() => {
                                     class="field-error"
                                 >
                                     {{ productForm.errors.name }}
+                                </span>
+                            </div>
+                            <div class="field">
+                                <label for="new-product-description"
+                                    >Descrição</label
+                                >
+                                <textarea
+                                    id="new-product-description"
+                                    v-model="productForm.description"
+                                    maxlength="150"
+                                    placeholder="Descreva o produto"
+                                    rows="3"
+                                    required
+                                ></textarea>
+                                <span class="field-help"
+                                    >Até 150 caracteres.</span
+                                >
+                                <span
+                                    v-if="productForm.errors.description"
+                                    class="field-error"
+                                >
+                                    {{ productForm.errors.description }}
                                 </span>
                             </div>
                             <div class="field">
@@ -1840,7 +2138,7 @@ onBeforeUnmount(() => {
                             </div>
                         </form>
                     </section>
-                    <section class="admin-card card">
+                    <section class="admin-card card products-admin-card">
                         <h2>Produtos adicionados</h2>
                         <template v-if="customProducts.length">
                             <div
@@ -1848,7 +2146,7 @@ onBeforeUnmount(() => {
                             >
                                 <span>Produto</span>
                                 <span>Categoria</span>
-                                <span>Preço</span>
+                                <span>Estoque</span>
                                 <span>Ações</span>
                             </div>
                             <div
@@ -1865,7 +2163,48 @@ onBeforeUnmount(() => {
                                 </span>
                                 <span>{{ product.group }}</span>
                                 <span>{{ formatPrice(product.price) }}</span>
+                                <span
+                                    :class="{
+                                        'stock-low':
+                                            (product.stock ?? 0) <=
+                                            (product.minimumStock ?? 20),
+                                    }"
+                                >
+                                    {{ product.stock ?? 0 }}
+                                    <small>
+                                        (mín. {{ product.minimumStock ?? 20 }})
+                                    </small>
+                                </span>
                                 <span class="admin-actions">
+                                    <input
+                                        v-model.number="
+                                            stockQuantities[product.id]
+                                        "
+                                        class="stock-quantity"
+                                        type="number"
+                                        min="1"
+                                        aria-label="Quantidade para movimentar"
+                                    />
+                                    <button
+                                        class="button button-small"
+                                        type="button"
+                                        :aria-label="`Adicionar ${product.name} ao estoque`"
+                                        @click="
+                                            updateProductStock(product, 'add')
+                                        "
+                                    >
+                                        + estoque
+                                    </button>
+                                    <button
+                                        class="button button-small"
+                                        type="button"
+                                        :aria-label="`Remover ${product.name} do estoque`"
+                                        @click="
+                                            updateProductStock(product, 'remove')
+                                        "
+                                    >
+                                        − estoque
+                                    </button>
                                     <button
                                         type="button"
                                         :aria-label="`Editar ${product.name}`"
@@ -1888,8 +2227,68 @@ onBeforeUnmount(() => {
                             Ainda não há produtos adicionados ao cardápio.
                         </p>
                     </section>
-                    <section class="admin-card card">
+                    <section class="admin-card card orders-admin-card">
                         <h2>Visão geral de pedidos</h2>
+                        <div class="order-admin-filters">
+                            <label>
+                                Data
+                                <input
+                                    v-model="selectedOrderDate"
+                                    type="date"
+                                    aria-label="Filtrar pedidos por data"
+                                />
+                            </label>
+                            <label>
+                                Status
+                                <select
+                                    v-model="selectedOrderStatus"
+                                    aria-label="Filtrar pedidos por status"
+                                >
+                                    <option value="">Todos</option>
+                                    <option value="Em Produção">
+                                        Em Produção
+                                    </option>
+                                    <option value="Pronto para Entrega">
+                                        Pronto para Entrega
+                                    </option>
+                                    <option value="Está pronto o pedido">
+                                        Está pronto o pedido
+                                    </option>
+                                    <option value="Saiu para Entrega">
+                                        Saiu para Entrega
+                                    </option>
+                                    <option value="Entregue">Entregue</option>
+                                    <option value="Pedido retirado">
+                                        Pedido retirado
+                                    </option>
+                                    <option value="Cancelado">Cancelado</option>
+                                </select>
+                            </label>
+                            <label>
+                                Número do pedido
+                                <input
+                                    v-model="orderNumberSearch"
+                                    type="search"
+                                    inputmode="numeric"
+                                    placeholder="Digite o número"
+                                    aria-label="Buscar por número do pedido"
+                                />
+                            </label>
+                            <label>
+                                Ordenar
+                                <select
+                                    v-model="orderSort"
+                                    aria-label="Ordenar pedidos por data de criação"
+                                >
+                                    <option value="newest">
+                                        Mais recentes primeiro
+                                    </option>
+                                    <option value="oldest">
+                                        Mais antigos primeiro
+                                    </option>
+                                </select>
+                            </label>
+                        </div>
                         <div class="order-admin-row eyebrow">
                             <span>Número</span>
                             <span>Nome</span>
@@ -1897,18 +2296,18 @@ onBeforeUnmount(() => {
                             <span>Total</span>
                         </div>
                         <div
-                            v-for="(order, index) in adminOrders"
+                            v-for="order in adminOrders"
                             :key="order.number"
                             class="order-admin-row"
                         >
                             <span>{{ order.number }}</span>
-                            <span>{{ order.name || 'Cliente' }}</span>
+                            <span>{{ order.name }}<br /><small>{{ order.email }}</small></span>
                             <select
                                 :value="order.status"
                                 :aria-label="`Status do pedido ${order.number}`"
                                 @change="
                                     updateOrderStatus(
-                                        index,
+                                        order,
                                         ($event.target as HTMLSelectElement)
                                             .value,
                                     )
@@ -1921,12 +2320,14 @@ onBeforeUnmount(() => {
                                               'Em Produção',
                                               'Está pronto o pedido',
                                               'Pedido retirado',
+                                              'Cancelado',
                                           ]
                                         : [
                                               'Em Produção',
                                               'Pronto para Entrega',
                                               'Saiu para Entrega',
                                               'Entregue',
+                                              'Cancelado',
                                           ]"
                                     :key="status"
                                 >
@@ -1935,6 +2336,9 @@ onBeforeUnmount(() => {
                             </select>
                             <span>{{ formatPrice(order.total) }}</span>
                         </div>
+                        <p v-if="!adminOrders.length" class="muted small">
+                            Ainda não há pedidos realizados.
+                        </p>
                     </section>
                 </div>
             </section>

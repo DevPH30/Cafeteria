@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Product;
+use App\Models\Order;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Middleware;
@@ -42,7 +43,17 @@ class HandleInertiaRequests extends Middleware
             'name' => config('app.name'),
             'auth' => [
                 'user' => $request->user(),
-                'customer' => Auth::guard('customer')->user()?->only(['id', 'name', 'email']),
+                'customer' => Auth::guard('customer')->user()?->only([
+                    'id',
+                    'name',
+                    'email',
+                    'phone',
+                    'address',
+                    'neighborhood',
+                    'city',
+                    'state',
+                    'zip_code',
+                ]),
             ],
             'customerStatus' => fn () => $request->session()->get('customerStatus'),
             'adminStatus' => fn () => $request->session()->get('adminStatus'),
@@ -52,9 +63,73 @@ class HandleInertiaRequests extends Middleware
                 'category' => $product->category,
                 'group' => $product->group,
                 'price' => (float) $product->price,
+                'stock' => $product->stock,
+                'minimumStock' => $product->minimum_stock,
                 'description' => $product->description,
                 'image' => str_starts_with($product->image, 'http') ? $product->image : asset('storage/'.$product->image),
             ])->values(),
+            'latestCustomerOrder' => function () use ($request): ?array {
+                if (! Auth::guard('customer')->check()) {
+                    return null;
+                }
+
+                $order = Order::query()
+                    ->where('customer_id', Auth::guard('customer')->id())
+                    ->when($request->query('order'), fn ($query, $number) => $query->where('number', $number))
+                    ->latest('id')
+                    ->first();
+
+                return $order ? [
+                    'number' => $order->number,
+                    'name' => $order->customer->name,
+                    'email' => $order->customer->email,
+                    'status' => $order->status,
+                    'total' => (float) $order->total,
+                    'fulfillment' => $order->fulfillment,
+                    'date' => $order->scheduled_date?->format('Y-m-d'),
+                    'time' => $order->scheduled_time,
+                    'message' => $order->message,
+                    'request' => $order->scheduled_date !== null,
+                    'paymentMethod' => $order->payment_method,
+                    'deliveryAddress' => $order->delivery_address,
+                    'items' => $order->items,
+                ] : null;
+            },
+            'customerOrders' => fn () => Auth::guard('customer')->check()
+                ? Order::query()
+                    ->where('customer_id', Auth::guard('customer')->id())
+                    ->latest('created_at')
+                    ->get()
+                    ->map(fn (Order $order) => [
+                        'number' => $order->number,
+                        'name' => $order->customer->name,
+                        'email' => $order->customer->email,
+                        'status' => $order->status,
+                        'fulfillment' => $order->fulfillment,
+                        'total' => (float) $order->total,
+                        'createdAt' => $order->created_at?->toIso8601String(),
+                        'items' => $order->items,
+                    ])
+                    ->values()
+                : [],
+            'adminOrders' => fn () => $request->user()
+                ? Order::query()
+                    ->with('customer:id,name,email')
+                    ->latest('id')
+                    ->get()
+                    ->map(fn (Order $order) => [
+                        'id' => $order->id,
+                        'number' => $order->number,
+                        'name' => $order->customer->name,
+                        'email' => $order->customer->email,
+                        'status' => $order->status,
+                        'fulfillment' => $order->fulfillment,
+                        'total' => (float) $order->total,
+                        'createdAt' => $order->created_at?->toIso8601String(),
+                        'items' => $order->items,
+                    ])
+                    ->values()
+                : [],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];
     }

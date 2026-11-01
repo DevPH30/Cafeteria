@@ -16,7 +16,7 @@ const emit = defineEmits<{
 const links = [
     { page: 'inicio', label: 'início', href: '/' },
     { page: 'produtos', label: 'produtos', href: '/produtos' },
-    { page: 'pedidos', label: 'pedidos', href: '/pedidos' },
+    { page: 'pedidos', label: 'encomendas', href: '/encomendas' },
     { page: 'contatos', label: 'contatos', href: '/contatos' },
     { page: 'sobre', label: 'sobre nós', href: '/sobre-nos' },
 ];
@@ -63,7 +63,7 @@ const links = [
                 class="icon-button"
                 type="button"
                 aria-label="Minha conta"
-                @click="emit('navigate', 'inicio')"
+                @click="emit('navigate', 'conta')"
             >
                 <svg viewBox="0 0 40 40" aria-hidden="true">
                     <circle cx="20" cy="20" r="17" />

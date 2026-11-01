@@ -20,6 +20,7 @@ class ProductManagementTest extends TestCase
 
         $response = $this->post(route('admin.products.store'), [
             'name' => 'Espresso especial',
+            'description' => 'Espresso intenso preparado na hora.',
             'price' => '12.50',
             'category' => 'coffee',
             'image' => UploadedFile::fake()->image('espresso.png'),
@@ -43,7 +44,13 @@ class ProductManagementTest extends TestCase
                 'category' => 'invalid',
             ])
             ->assertRedirect('/admin')
-            ->assertSessionHasErrors(['name', 'price', 'category', 'image']);
+            ->assertSessionHasErrors([
+                'name',
+                'description',
+                'price',
+                'category',
+                'image',
+            ]);
     }
 
     public function test_administrator_can_edit_and_remove_a_product(): void
@@ -52,6 +59,7 @@ class ProductManagementTest extends TestCase
         $this->actingAs(User::factory()->create(), 'web');
         $product = Product::create([
             'name' => 'Produto antigo',
+            'description' => 'Descrição do produto antigo.',
             'price' => 10,
             'category' => 'coffee',
             'image' => UploadedFile::fake()->image('old.png')->store('products', 'public'),
@@ -59,6 +67,7 @@ class ProductManagementTest extends TestCase
 
         $this->put(route('admin.products.update', $product), [
             'name' => 'Produto atualizado',
+            'description' => 'Descrição do produto atualizado.',
             'price' => '15.90',
             'category' => 'cupcakes',
         ])->assertRedirect();

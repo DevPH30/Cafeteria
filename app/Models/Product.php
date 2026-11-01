@@ -5,13 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['name', 'category', 'price', 'image'])]
+#[Fillable(['name', 'description', 'category', 'price', 'image', 'stock', 'minimum_stock'])]
 class Product extends Model
 {
     protected function casts(): array
     {
         return [
             'price' => 'decimal:2',
+            'stock' => 'integer',
+            'minimum_stock' => 'integer',
         ];
     }
 
@@ -24,8 +26,4 @@ class Product extends Model
         };
     }
 
-    public function getDescriptionAttribute(): string
-    {
-        return 'Preparado artesanalmente no Café Aroma.';
-    }
 }

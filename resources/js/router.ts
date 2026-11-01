@@ -29,7 +29,7 @@ const routes: RouteRecordRaw[] = [
         meta: { page: 'contatos' },
     },
     {
-        path: '/pedidos',
+        path: '/encomendas',
         name: 'orders',
         component: cafePage,
         meta: { page: 'pedidos' },
@@ -45,6 +45,12 @@ const routes: RouteRecordRaw[] = [
         name: 'order-tracking',
         component: cafePage,
         meta: { page: 'acompanhar' },
+    },
+    {
+        path: '/minha-conta',
+        name: 'customer-account',
+        component: cafePage,
+        meta: { page: 'conta' },
     },
     {
         path: '/admin',
