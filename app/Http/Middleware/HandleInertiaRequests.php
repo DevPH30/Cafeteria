@@ -89,6 +89,9 @@ class HandleInertiaRequests extends Middleware
                     'date' => $order->scheduled_date?->format('Y-m-d'),
                     'time' => $order->scheduled_time,
                     'message' => $order->message,
+                    'value' => $order->value !== null ? (float) $order->value : null,
+                    'detail' => $order->detail,
+                    'phone' => $order->customer->phone,
                     'request' => $order->scheduled_date !== null,
                     'paymentMethod' => $order->payment_method,
                     'deliveryAddress' => $order->delivery_address,
@@ -104,8 +107,14 @@ class HandleInertiaRequests extends Middleware
                         'number' => $order->number,
                         'name' => $order->customer->name,
                         'email' => $order->customer->email,
+                        'phone' => $order->customer->phone,
                         'status' => $order->status,
                         'fulfillment' => $order->fulfillment,
+                        'date' => $order->scheduled_date?->format('Y-m-d'),
+                        'time' => $order->scheduled_time,
+                        'message' => $order->message,
+                        'detail' => $order->detail,
+                        'request' => $order->scheduled_date !== null,
                         'total' => (float) $order->total,
                         'createdAt' => $order->created_at?->toIso8601String(),
                         'items' => $order->items,
@@ -114,6 +123,7 @@ class HandleInertiaRequests extends Middleware
                 : [],
             'adminOrders' => fn () => $request->user()
                 ? Order::query()
+                    ->whereNull('scheduled_date')
                     ->with('customer:id,name,email')
                     ->latest('id')
                     ->get()
@@ -127,6 +137,27 @@ class HandleInertiaRequests extends Middleware
                         'total' => (float) $order->total,
                         'createdAt' => $order->created_at?->toIso8601String(),
                         'items' => $order->items,
+                    ])
+                    ->values()
+                : [],
+            'adminReservations' => fn () => $request->user()
+                ? Order::query()
+                    ->whereNotNull('scheduled_date')
+                    ->with('customer:id,name,email,phone')
+                    ->latest('id')
+                    ->get()
+                    ->map(fn (Order $order) => [
+                        'number' => $order->number,
+                        'name' => $order->customer->name,
+                        'email' => $order->customer->email,
+                        'phone' => $order->customer->phone,
+                        'status' => $order->status,
+                        'date' => $order->scheduled_date?->format('Y-m-d'),
+                        'time' => $order->scheduled_time,
+                        'message' => $order->message,
+                        'value' => $order->value !== null ? (float) $order->value : null,
+                        'detail' => $order->detail,
+                        'createdAt' => $order->created_at?->toIso8601String(),
                     ])
                     ->values()
                 : [],

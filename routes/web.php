@@ -41,7 +41,9 @@ Route::inertia('/', 'Cafe')->name('home');
 Route::inertia('/produtos', 'Cafe')->name('products');
 Route::inertia('/sobre-nos', 'Cafe')->name('about');
 Route::inertia('/contatos', 'Cafe')->name('contact');
-Route::inertia('/encomendas', 'Cafe')->name('orders');
+Route::inertia('/encomendas', 'Cafe')
+    ->middleware('auth:customer')
+    ->name('orders');
 Route::inertia('/checkout', 'Cafe')->name('checkout');
 Route::inertia('/acompanhar-pedido', 'Cafe')->name('order-tracking');
 Route::inertia('/minha-conta', 'Cafe')->name('customer.account');
@@ -52,6 +54,7 @@ Route::middleware('auth:web')->group(function () {
     Route::patch('/admin/produtos/{product}/estoque', [ProductController::class, 'updateStock'])->name('admin.products.stock');
     Route::delete('/admin/produtos/{product}', [ProductController::class, 'destroy'])->name('admin.products.destroy');
     Route::patch('/admin/pedidos/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('admin.orders.status');
+    Route::patch('/admin/encomendas/{order}', [AdminOrderController::class, 'updateReservation'])->name('admin.reservations.update');
 });
 Route::middleware('auth:web')->prefix('/admin/administradores')->name('admin.administrators.')->group(function () {
     Route::get('/cadastro', [AdministratorController::class, 'create'])->name('create');

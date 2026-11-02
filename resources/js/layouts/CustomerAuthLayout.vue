@@ -2,7 +2,13 @@
     <div class="cafe-site customer-auth-site">
         <header class="site-header">
             <a class="brand" href="/" aria-label="Café Aroma - início">
-                <span class="brand-mark" aria-hidden="true">☕</span>
+                <span class="brand-mark">
+                    <img
+                        src="/images/cafe/logo-cup.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                </span>
                 <span>Café Aroma</span>
             </a>
             <a class="customer-auth-home" href="/">Voltar para o início</a>

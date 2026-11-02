@@ -15,6 +15,10 @@ class OrderController extends Controller
 {
     public function store(Request $request): RedirectResponse
     {
+        if ($request->boolean('reservation')) {
+            return $this->storeReservation($request);
+        }
+
         $validated = $request->validate([
             'items' => ['required', 'array', 'min:1'],
             'items.*.id' => ['required', 'integer', 'distinct'],
@@ -86,6 +90,41 @@ class OrderController extends Controller
                 'scheduled_date' => $validated['scheduled_date'] ?? null,
                 'scheduled_time' => $validated['scheduled_time'] ?? null,
                 'message' => $validated['message'] ?? null,
+            ]);
+        });
+
+        return redirect('/acompanhar-pedido')->with('customerOrderNumber', $order->number);
+    }
+
+    private function storeReservation(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'message' => ['required', 'string', 'max:1000'],
+            'scheduled_date' => ['required', 'date'],
+            'scheduled_time' => ['required', 'date_format:H:i'],
+        ], [
+            'message.required' => 'Descreva o pedido na mensagem.',
+            'scheduled_date.required' => 'Escolha a data de retirada.',
+            'scheduled_time.required' => 'Escolha o horário de retirada.',
+        ]);
+
+        $customer = Auth::guard('customer')->user();
+        $order = DB::transaction(function () use ($customer, $validated): Order {
+            return Order::create([
+                'customer_id' => $customer->id,
+                'number' => $this->uniqueNumber(),
+                'status' => 'aguardando retorno',
+                'fulfillment' => 'pickup',
+                'payment_method' => 'pickup',
+                'subtotal' => 0,
+                'delivery_fee' => 0,
+                'total' => 0,
+                'items' => [],
+                'scheduled_date' => $validated['scheduled_date'],
+                'scheduled_time' => $validated['scheduled_time'],
+                'message' => $validated['message'],
+                'value' => null,
+                'detail' => $validated['message'],
             ]);
         });
 

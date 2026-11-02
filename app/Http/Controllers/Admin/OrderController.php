@@ -16,14 +16,47 @@ class OrderController extends Controller
         $validated = $request->validate([
             'status' => [
                 'required',
-                Rule::in($order->fulfillment === 'pickup'
+                Rule::in($order->scheduled_date !== null
+                    ? ['aguardando retorno', 'pedido confirmado', 'pedido retirado', 'pedido cancelado']
+                    : ($order->fulfillment === 'pickup'
                     ? ['Em Produção', 'Está pronto o pedido', 'Pedido retirado', 'Cancelado']
-                    : ['Em Produção', 'Pronto para Entrega', 'Saiu para Entrega', 'Entregue', 'Cancelado']),
+                    : ['Em Produção', 'Pronto para Entrega', 'Saiu para Entrega', 'Entregue', 'Cancelado'])),
             ],
         ]);
 
         $order->update(['status' => $validated['status']]);
 
         return back()->with('adminStatus', 'Status do pedido atualizado.');
+    }
+
+    public function updateReservation(Request $request, string $order): RedirectResponse
+    {
+        $reservation = Order::query()
+            ->where('number', $order)
+            ->whereNotNull('scheduled_date')
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'status' => [
+                'required',
+                Rule::in(['aguardando retorno', 'pedido confirmado', 'pedido retirado', 'pedido cancelado']),
+            ],
+            'scheduled_date' => ['required', 'date'],
+            'scheduled_time' => ['required', 'date_format:H:i'],
+            'value' => ['nullable', 'numeric', 'min:0', 'max:100000'],
+            'detail' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $reservation->update([
+            'status' => $validated['status'],
+            'scheduled_date' => $validated['scheduled_date'],
+            'scheduled_time' => $validated['scheduled_time'],
+            'value' => $validated['value'] ?? null,
+            'detail' => $validated['detail'] ?? null,
+            'subtotal' => $validated['value'] ?? 0,
+            'total' => $validated['value'] ?? 0,
+        ]);
+
+        return back()->with('adminStatus', 'Encomenda atualizada.');
     }
 }

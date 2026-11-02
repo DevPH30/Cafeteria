@@ -11,7 +11,14 @@ const emit = defineEmits<{
             href="/"
             @click.prevent="emit('navigate', 'inicio')"
         >
-            ☕ Café Aroma
+            <span class="brand-mark">
+                <img
+                    src="/images/cafe/logo-cup.png"
+                    alt=""
+                    aria-hidden="true"
+                />
+            </span>
+            <span>Café Aroma</span>
         </a>
         <span>Feito com carinho, servido com aroma.</span>
         <div class="footer-links">

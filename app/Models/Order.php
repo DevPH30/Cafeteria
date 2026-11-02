@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'scheduled_date',
     'scheduled_time',
     'message',
+    'value',
+    'detail',
 ])]
 class Order extends Model
 {
@@ -31,6 +33,7 @@ class Order extends Model
             'total' => 'decimal:2',
             'items' => 'array',
             'scheduled_date' => 'date:Y-m-d',
+            'value' => 'decimal:2',
         ];
     }
 

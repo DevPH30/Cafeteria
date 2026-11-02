@@ -30,7 +30,13 @@ const links = [
             aria-label="Café Aroma - início"
             @click.prevent="emit('navigate', 'inicio')"
         >
-            <span class="brand-mark" aria-hidden="true">☕</span>
+            <span class="brand-mark">
+                <img
+                    src="/images/cafe/logo-cup.png"
+                    alt=""
+                    aria-hidden="true"
+                />
+            </span>
             <span>Café Aroma</span>
         </a>
 

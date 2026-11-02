@@ -32,6 +32,7 @@ const props = defineProps<{
     latestCustomerOrder?: CafeOrder | null;
     customerOrders?: CafeOrder[];
     adminOrders?: CafeOrder[];
+    adminReservations?: CafeReservation[];
 }>();
 
 type Category = CafeProduct['category'];
@@ -53,10 +54,26 @@ type CafeOrder = {
     date?: string;
     time?: string;
     message?: string;
+    value?: number;
+    detail?: string;
+    phone?: string;
     request?: boolean;
     paymentMethod?: string;
     deliveryAddress?: string;
     items: OrderItem[];
+};
+type CafeReservation = {
+    number: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    status: string;
+    date: string;
+    time: string;
+    message?: string;
+    value?: number | null;
+    detail?: string | null;
+    createdAt?: string;
 };
 type InventoryItem = {
     name: string;
@@ -170,6 +187,7 @@ const loginForm = useForm({
 });
 const returnToCheckoutAfterLogin = ref(false);
 const returnToAccountAfterLogin = ref(false);
+const returnToOrdersAfterLogin = ref(false);
 const accountTab = ref<'cadastro' | 'pedidos' | 'encomendas'>('cadastro');
 const profileForm = useForm({
     name: props.auth.customer?.name ?? '',
@@ -263,7 +281,9 @@ const latestOrder = computed(
     () => props.latestCustomerOrder ?? null,
 );
 const trackingSteps = computed(() =>
-    latestOrder.value?.status === 'Cancelado'
+    latestOrder.value?.request
+        ? ['aguardando retorno', 'pedido confirmado', 'pedido retirado']
+        : latestOrder.value?.status === 'Cancelado'
         ? ['Pedido Cancelado']
         : latestOrder.value?.fulfillment === 'pickup'
         ? [
@@ -277,6 +297,8 @@ const trackingSteps = computed(() =>
 const trackingStatus = computed(() => {
     const status = latestOrder.value?.status;
     if (!status) return '';
+
+    if (latestOrder.value?.request) return status;
 
     if (latestOrder.value?.fulfillment === 'pickup') {
         if (status === 'Pronto para Entrega') return 'Está pronto o pedido';
@@ -304,13 +326,57 @@ const selectedOrderDate = ref(getLocalDate());
 const orderSort = ref<'newest' | 'oldest'>('newest');
 const selectedOrderStatus = ref('');
 const orderNumberSearch = ref('');
+const selectedReservationDate = ref('');
+const reservationSort = ref<'newest' | 'oldest'>('newest');
+const selectedReservationStatus = ref('');
+const reservationNumberSearch = ref('');
+const editingReservation = ref<CafeReservation | null>(null);
+const reservationForm = useForm({
+    status: '',
+    scheduled_date: '',
+    scheduled_time: '',
+    value: null as number | null,
+    detail: '',
+});
 watch(page, (currentPage, previousPage) => {
     if (currentPage === 'admin' && previousPage !== 'admin') {
         selectedOrderDate.value = getLocalDate();
         orderSort.value = 'newest';
         selectedOrderStatus.value = '';
         orderNumberSearch.value = '';
+        selectedReservationDate.value = '';
+        reservationSort.value = 'newest';
+        selectedReservationStatus.value = '';
+        reservationNumberSearch.value = '';
     }
+});
+const adminReservations = computed(() => {
+    const reservations = (props.adminReservations ?? []).filter((reservation) => {
+        const matchesDate =
+            !selectedReservationDate.value ||
+            reservation.date === selectedReservationDate.value;
+        const matchesStatus =
+            !selectedReservationStatus.value ||
+            reservation.status === selectedReservationStatus.value;
+        const matchesNumber =
+            !reservationNumberSearch.value.trim() ||
+            reservation.number.includes(reservationNumberSearch.value.trim());
+
+        return matchesDate && matchesStatus && matchesNumber;
+    });
+
+    return [...reservations].sort((first, second) => {
+        const firstTime = first.createdAt
+            ? new Date(first.createdAt).getTime()
+            : 0;
+        const secondTime = second.createdAt
+            ? new Date(second.createdAt).getTime()
+            : 0;
+
+        return reservationSort.value === 'newest'
+            ? secondTime - firstTime
+            : firstTime - secondTime;
+    });
 });
 const adminOrders = computed(() => {
     const orders = (props.adminOrders ?? []).filter((order) => {
@@ -342,6 +408,89 @@ const adminOrders = computed(() => {
             : firstTime - secondTime;
     });
 });
+const currentYear = new Date().getFullYear();
+const monthlyGrossSales = computed(() => {
+    const monthLabels = [
+        'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
+        'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez',
+    ];
+    const totals = monthLabels.map((label, month) => ({
+        label,
+        month,
+        orders: 0,
+        reservations: 0,
+    }));
+
+    for (const order of props.adminOrders ?? []) {
+        if (
+            !order.createdAt ||
+            order.status === 'Cancelado' ||
+            order.status === 'pedido cancelado'
+        ) {
+            continue;
+        }
+
+        const createdAt = new Date(order.createdAt);
+        if (createdAt.getFullYear() === currentYear) {
+            totals[createdAt.getMonth()].orders += order.total;
+        }
+    }
+
+    for (const reservation of props.adminReservations ?? []) {
+        if (
+            !reservation.createdAt ||
+            reservation.status === 'pedido cancelado'
+        ) {
+            continue;
+        }
+
+        const createdAt = new Date(reservation.createdAt);
+        if (createdAt.getFullYear() === currentYear) {
+            totals[createdAt.getMonth()].reservations += reservation.value ?? 0;
+        }
+    }
+
+    return totals.map((item) => ({
+        ...item,
+        total: item.orders + item.reservations,
+    }));
+});
+const grossSalesChartMax = computed(() => {
+    const highestTotal = Math.max(
+        ...monthlyGrossSales.value.map(({ total }) => total),
+        0,
+    );
+
+    return highestTotal > 0 ? Math.ceil(highestTotal / 100) * 100 : 100;
+});
+function chartBarX(index: number) {
+    return 40 + index * 37;
+}
+function chartBarHeight(total: number) {
+    return (total / grossSalesChartMax.value) * 125;
+}
+function chartBarY(total: number) {
+    return 145 - chartBarHeight(total);
+}
+function chartLinePoints(
+    series: 'orders' | 'reservations',
+) {
+    return monthlyGrossSales.value
+        .map(
+            (item) =>
+                `${chartBarX(item.month) + 11},${chartBarY(item[series])}`,
+        )
+        .join(' ');
+}
+function formatChartValue(value: number) {
+    if (value >= 1000) {
+        return `R$${(value / 1000).toLocaleString('pt-BR', {
+            maximumFractionDigits: 1,
+        })}k`;
+    }
+
+    return `R$${Math.round(value)}`;
+}
 const lowStockProducts = computed(() =>
     customProducts.value.filter(
         (product) =>
@@ -480,6 +629,11 @@ function navigate(target: string, category?: 'all' | Category) {
         showToast('Entre na sua conta para acessar seus dados.');
         destination = 'inicio';
     }
+    if (target === 'pedidos' && !props.auth.customer) {
+        returnToOrdersAfterLogin.value = true;
+        showToast('Entre na sua conta para fazer uma encomenda.');
+        destination = 'inicio';
+    }
     searchOpen.value = false;
     void router.push({ name: pageRouteNames[destination] });
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -566,6 +720,10 @@ function submitLogin() {
                 returnToAccountAfterLogin.value = false;
                 navigate('conta');
             }
+            if (returnToOrdersAfterLogin.value) {
+                returnToOrdersAfterLogin.value = false;
+                navigate('pedidos');
+            }
         },
     });
 }
@@ -617,17 +775,30 @@ function submitPickupRequest(event: SubmitEvent) {
         return;
     }
 
+    if (!props.auth.customer) {
+        returnToOrdersAfterLogin.value = true;
+        showToast('Entre na sua conta para fazer uma encomenda.');
+        navigate('inicio');
+        return;
+    }
+
     const data = new FormData(form);
-    pendingOrder.value = {
-        name: String(data.get('name')),
-        email: String(data.get('email')),
+    inertiaRouter.post('/cliente/pedidos', {
+        reservation: true,
         message: String(data.get('message')),
-        time: String(data.get('time')),
-        date: selectedDate.value,
-    };
-    fulfillment.value = 'pickup';
-    persistState();
-    navigate('checkout');
+        scheduled_date: selectedDate.value,
+        scheduled_time: String(data.get('time')),
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            selectedDate.value = null;
+            navigate('acompanhar');
+        },
+        onError: (errors) => {
+            const message = Object.values(errors)[0];
+            if (message) showToast(String(message));
+        },
+    });
 }
 
 function applyCoupon() {
@@ -817,7 +988,7 @@ function removeCustomProduct(product: CafeProduct) {
     });
 }
 
-function updateOrderStatus(order: CafeOrder, status: string) {
+function updateOrderStatus(order: { number: string }, status: string) {
     if (!order) return;
 
     inertiaRouter.patch(`/admin/pedidos/${order.number}/status`, { status }, {
@@ -827,6 +998,43 @@ function updateOrderStatus(order: CafeOrder, status: string) {
             if (message) showToast(String(message));
         },
     });
+}
+
+function openReservationEditor(reservation: CafeReservation) {
+    editingReservation.value = reservation;
+    reservationForm.status = reservation.status;
+    reservationForm.scheduled_date = reservation.date;
+    reservationForm.scheduled_time = reservation.time;
+    reservationForm.value = reservation.value ?? null;
+    reservationForm.detail = reservation.detail ?? reservation.message ?? '';
+    reservationForm.clearErrors();
+}
+
+function closeReservationEditor(force = false) {
+    if (reservationForm.processing && !force) return;
+
+    editingReservation.value = null;
+    reservationForm.reset();
+    reservationForm.clearErrors();
+}
+
+function saveReservation() {
+    if (!editingReservation.value) return;
+
+    reservationForm.patch(
+        `/admin/encomendas/${editingReservation.value.number}`,
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                closeReservationEditor(true);
+                showToast('Encomenda atualizada com sucesso.');
+            },
+            onError: (errors) => {
+                const message = Object.values(errors)[0];
+                if (message) showToast(String(message));
+            },
+        },
+    );
 }
 
 function handlePaymentMethodChange() {
@@ -1014,7 +1222,13 @@ onBeforeUnmount(() => {
                                 <strong>Cafés especiais</strong>
                                 <span>Do espresso ao cappuccino</span>
                             </div>
-                            <span class="category-icon">☕</span>
+                            <span class="category-icon">
+                                <img
+                                    src="/images/cafe/logo-cup.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                            </span>
                         </a>
                         <a
                             class="category-card card"
@@ -1025,7 +1239,13 @@ onBeforeUnmount(() => {
                                 <strong>Cupcakes</strong>
                                 <span>Doces feitos à mão</span>
                             </div>
-                            <span class="category-icon">🧁</span>
+                            <span class="category-icon">
+                                <img
+                                    src="/images/cafe/cupcake-icon.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                            </span>
                         </a>
                         <a
                             class="category-card card"
@@ -1036,7 +1256,7 @@ onBeforeUnmount(() => {
                                 <strong>Faça sua encomenda</strong>
                                 <span>Escolha o melhor horário</span>
                             </div>
-                            <span class="category-icon">♡</span>
+                            <span class="category-icon order-category-icon">♡</span>
                         </a>
                     </section>
                 </div>
@@ -1088,7 +1308,14 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="page === 'contatos'" class="page-wrap">
-                <h1 class="page-title">Contatos</h1>
+                <h1 class="page-title contact-page-title">
+                    <img
+                        src="/images/cafe/phone-icon.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                    <span>Contatos</span>
+                </h1>
                 <div class="contact-layout">
                     <div class="contact-list">
                         <a
@@ -1097,23 +1324,29 @@ onBeforeUnmount(() => {
                             target="_blank"
                             rel="noreferrer"
                         >
-                            <span class="contact-icon">◎</span>
+                            <span class="contact-icon">
+                                <img src="/images/cafe/contact-icon-1.png" alt="" aria-hidden="true" />
+                            </span>
                             <span>
                                 <strong>Instagram</strong>
                                 <span>@cafearoma</span>
                             </span>
                         </a>
                         <a class="contact-row" href="tel:+553333333333">
-                            <span class="contact-icon">♧</span>
+                            <span class="contact-icon">
+                                <img src="/images/cafe/contact-icon-2.png" alt="" aria-hidden="true" />
+                            </span>
                             <span>
                                 <strong>Telefone</strong>
                                 <span>+55 (33) 3333-3333</span>
                             </span>
                         </a>
                         <div class="contact-row">
-                            <span class="contact-icon">⌖</span>
+                            <span class="contact-icon">
+                                <img src="/images/cafe/contact-icon-3.png" alt="" aria-hidden="true" />
+                            </span>
                             <span>
-                                <strong>Morada</strong>
+                                <strong>Endereço</strong>
                                 <span>Rua do Aroma, 123 — Centro</span>
                             </span>
                         </div>
@@ -1121,7 +1354,9 @@ onBeforeUnmount(() => {
                             class="contact-row"
                             href="mailto:contato@cafearoma.com.br"
                         >
-                            <span class="contact-icon">✉</span>
+                            <span class="contact-icon">
+                                <img src="/images/cafe/contact-icon-4.png" alt="" aria-hidden="true" />
+                            </span>
                             <span>
                                 <strong>E-mail</strong>
                                 <span>contato@cafearoma.com.br</span>
@@ -1154,7 +1389,14 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="page === 'pedidos'" class="page-wrap">
-                <h1 class="page-title">Encomendas</h1>
+                <h1 class="page-title order-page-title">
+                    <img
+                        src="/images/cafe/handshake-icon.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                    <span>Encomendas</span>
+                </h1>
                 <div class="order-layout">
                     <form
                         class="order-form card form-grid"
@@ -1164,25 +1406,6 @@ onBeforeUnmount(() => {
                         <h2 class="section-title order-section-title">
                             Reserve seu momento
                         </h2>
-                        <div class="field">
-                            <label for="order-name">Nome</label>
-                            <input
-                                id="order-name"
-                                name="name"
-                                placeholder="Seu nome"
-                                required
-                            />
-                        </div>
-                        <div class="field">
-                            <label for="order-email">E-mail</label>
-                            <input
-                                id="order-email"
-                                name="email"
-                                type="email"
-                                placeholder="seu@email.com"
-                                required
-                            />
-                        </div>
                         <div class="field">
                             <label for="order-message">Mensagem</label>
                             <textarea
@@ -1196,17 +1419,19 @@ onBeforeUnmount(() => {
                             <label for="order-time"
                                 >Horário para retirada</label
                             >
-                            <select id="order-time" name="time" required>
-                                <option value="">Selecione um horário</option>
-                                <option>09:00</option>
-                                <option>10:30</option>
-                                <option>12:00</option>
-                                <option>14:00</option>
-                                <option>16:00</option>
-                            </select>
+                            <input
+                                id="order-time"
+                                name="time"
+                                type="text"
+                                inputmode="numeric"
+                                placeholder="Ex.: 14:30"
+                                pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                                title="Informe o horário no formato HH:MM."
+                                required
+                            />
                         </div>
                         <button class="button button-dark" type="submit">
-                            Ir para pagamento
+                            Solicitar encomenda
                         </button>
                     </form>
                     <div>
@@ -1238,10 +1463,20 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="page === 'acompanhar'" class="page-wrap">
-                <h1 class="page-title">
-                    Acompanhar pedido <span aria-hidden="true">♧</span>
+                <h1 class="page-title tracking-page-title">
+                    <img
+                        src="/images/cafe/scooter-icon.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                    <span>Acompanhar pedido</span>
                 </h1>
                 <div v-if="latestOrder" class="tracking-panel card">
+                    <div v-if="latestOrder.request" class="notice">
+                        Entraremos em contato em até 2h pelo telefone fornecido
+                        no cadastro do cliente:
+                        <strong>{{ latestOrder.phone }}</strong>
+                    </div>
                     <div class="tracking-top">
                         <div>
                             <span class="eyebrow">Café Aroma</span>
@@ -1278,6 +1513,10 @@ onBeforeUnmount(() => {
                         </div>
                         <aside class="summary-card card">
                             <h3>Resumo do pedido</h3>
+                            <p v-if="latestOrder.request">
+                                <strong>Mensagem:</strong>
+                                {{ latestOrder.message }}
+                            </p>
                             <template v-if="latestOrder?.items.length">
                                 <div
                                     v-for="item in latestOrder.items"
@@ -1326,7 +1565,14 @@ onBeforeUnmount(() => {
             </section>
 
             <section v-else-if="page === 'checkout'" class="page-wrap">
-                <h1 class="page-title">Finalizar compra/pagamento</h1>
+                <h1 class="page-title checkout-page-title">
+                    <img
+                        src="/images/cafe/cart-icon.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                    <span>Finalizar compra/pagamento</span>
+                </h1>
                 <div class="checkout-grid">
                     <div class="checkout-column">
                         <section class="checkout-card card">
@@ -1743,7 +1989,48 @@ onBeforeUnmount(() => {
                 </section>
                 <section v-else class="account-panel card">
                     <h2>Encomendas</h2>
-                    <p class="muted">Nenhuma encomenda disponível no momento.</p>
+                    <div
+                        v-if="props.customerOrders?.some((order) => order.request)"
+                        class="customer-orders"
+                    >
+                        <article
+                            v-for="order in props.customerOrders?.filter(
+                                (item) => item.request,
+                            )"
+                            :key="order.number"
+                            class="customer-order-row"
+                        >
+                            <div>
+                                <strong>Encomenda #{{ order.number }}</strong>
+                                <span class="muted small">
+                                    Status: {{ order.status }}
+                                </span>
+                                <span class="muted small">
+                                    Cliente: {{ order.name }} ·
+                                    {{ order.phone }}
+                                </span>
+                            </div>
+                            <div>
+                                <span class="muted small">
+                                    Retirada:
+                                    {{ order.date }} às {{ order.time }}
+                                </span>
+                                <span class="muted small">
+                                    Mensagem: {{ order.message }}
+                                </span>
+                            </div>
+                            <button
+                                class="button button-small"
+                                type="button"
+                                @click="trackOrder(order.number)"
+                            >
+                                Acompanhar
+                            </button>
+                        </article>
+                    </div>
+                    <p v-else class="muted">
+                        Você ainda não realizou nenhuma encomenda.
+                    </p>
                 </section>
                 </template>
             </section>
@@ -1797,7 +2084,14 @@ onBeforeUnmount(() => {
 
             <section v-else class="page-wrap">
                 <div class="admin-page-heading">
-                    <h1 class="page-title">♙ Dashboard administrativo</h1>
+                    <h1 class="page-title">
+                        <img
+                            src="/images/cafe/admin-lock-icon.png"
+                            alt=""
+                            aria-hidden="true"
+                        />
+                        <span>Dashboard administrativo</span>
+                    </h1>
                     <div class="admin-page-actions">
                         <Link
                             class="button button-dark"
@@ -1818,57 +2112,109 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="admin-grid">
                     <section class="admin-card card reports-admin-card">
-                        <h2>Relatórios administrativos</h2>
+                        <h2>Vendas brutas por mês · {{ currentYear }}</h2>
                         <div class="chart">
                             <svg
-                                viewBox="0 0 500 150"
+                                viewBox="0 0 500 180"
                                 role="img"
-                                aria-label="Gráfico ilustrativo de vendas"
+                                :aria-label="`Vendas brutas por mês em ${currentYear}`"
                             >
                                 <g stroke="#d2c2ab" stroke-width="1">
                                     <path
-                                        d="M45 15H490M45 45H490M45 75H490M45 105H490M45 135H490"
+                                        d="M40 20H490M40 51H490M40 82H490M40 113H490M40 145H490"
                                     />
                                 </g>
                                 <g fill="#8b745d" font-size="10">
-                                    <text x="2" y="18">R$5k</text>
-                                    <text x="2" y="48">R$4k</text>
-                                    <text x="2" y="78">R$3k</text>
-                                    <text x="2" y="108">R$2k</text>
+                                    <text x="0" y="23">
+                                        {{ formatChartValue(grossSalesChartMax) }}
+                                    </text>
+                                    <text x="0" y="54">
+                                        {{
+                                            formatChartValue(
+                                                grossSalesChartMax * 0.75,
+                                            )
+                                        }}
+                                    </text>
+                                    <text x="0" y="86">
+                                        {{ formatChartValue(grossSalesChartMax / 2) }}
+                                    </text>
+                                    <text x="0" y="117">
+                                        {{
+                                            formatChartValue(
+                                                grossSalesChartMax * 0.25,
+                                            )
+                                        }}
+                                    </text>
+                                    <text x="17" y="149">R$0</text>
                                 </g>
                                 <polyline
-                                    points="48,116 118,89 188,100 258,40 328,80 398,68 482,25"
+                                    :points="chartLinePoints('orders')"
                                     fill="none"
                                     stroke="#493522"
                                     stroke-width="3"
                                 />
                                 <polyline
-                                    points="48,128 118,110 188,118 258,76 328,98 398,91 482,59"
+                                    :points="chartLinePoints('reservations')"
                                     fill="none"
                                     stroke="#977452"
-                                    stroke-width="2"
-                                    stroke-dasharray="6 5"
+                                    stroke-width="3"
                                 />
-                                <g fill="#493522">
-                                    <circle cx="48" cy="116" r="3" />
-                                    <circle cx="118" cy="89" r="3" />
-                                    <circle cx="188" cy="100" r="3" />
-                                    <circle cx="258" cy="40" r="3" />
-                                    <circle cx="328" cy="80" r="3" />
-                                    <circle cx="398" cy="68" r="3" />
-                                    <circle cx="482" cy="25" r="3" />
-                                </g>
-                                <g fill="#78624e" font-size="10">
-                                    <text x="45" y="149">Abril</text>
-                                    <text x="114" y="149">Maio</text>
-                                    <text x="185" y="149">Junho</text>
-                                    <text x="251" y="149">Julho</text>
-                                    <text x="320" y="149">Agosto</text>
-                                    <text x="390" y="149">Setembro</text>
-                                    <text x="465" y="149">Outubro</text>
+                                <g
+                                    v-for="item in monthlyGrossSales"
+                                    :key="item.month"
+                                >
+                                    <circle
+                                        class="chart-point orders"
+                                        :cx="chartBarX(item.month) + 11"
+                                        :cy="chartBarY(item.orders)"
+                                        r="5.5"
+                                        fill="#493522"
+                                    >
+                                        <title>
+                                            {{ item.label }} · Pedidos:
+                                            {{ formatPrice(item.orders) }}
+                                        </title>
+                                    </circle>
+                                    <circle
+                                        class="chart-point reservations"
+                                        :cx="chartBarX(item.month) + 11"
+                                        :cy="chartBarY(item.reservations)"
+                                        r="5.5"
+                                        fill="#977452"
+                                    >
+                                        <title>
+                                            {{ item.label }} · Encomendas:
+                                            {{ formatPrice(item.reservations) }}
+                                        </title>
+                                    </circle>
+                                    <text
+                                        :x="chartBarX(item.month) + 11"
+                                        y="163"
+                                        text-anchor="middle"
+                                        fill="#78624e"
+                                        font-size="9"
+                                    >
+                                        {{ item.label }}
+                                    </text>
                                 </g>
                             </svg>
                         </div>
+                        <div class="chart-legend" aria-label="Legenda do gráfico">
+                            <span>
+                                <i class="chart-legend-swatch orders"></i>
+                                Pedidos
+                            </span>
+                            <span>
+                                <i class="chart-legend-swatch reservations"></i>
+                                Encomendas
+                            </span>
+                        </div>
+                        <p
+                            v-if="!monthlyGrossSales.some((item) => item.total)"
+                            class="muted small"
+                        >
+                            Ainda não há vendas registradas neste ano.
+                        </p>
                     </section>
                     <section class="admin-card card settings-admin-card">
                         <h2>Configurações</h2>
@@ -2314,8 +2660,14 @@ onBeforeUnmount(() => {
                                 "
                             >
                                 <option
-                                    v-for="status in order.fulfillment ===
-                                    'pickup'
+                                    v-for="status in order.request
+                                        ? [
+                                              'aguardando retorno',
+                                              'pedido confirmado',
+                                              'pedido retirado',
+                                              'pedido cancelado',
+                                          ]
+                                        : order.fulfillment === 'pickup'
                                         ? [
                                               'Em Produção',
                                               'Está pronto o pedido',
@@ -2340,6 +2692,87 @@ onBeforeUnmount(() => {
                             Ainda não há pedidos realizados.
                         </p>
                     </section>
+                    <section class="admin-card card reservations-admin-card">
+                        <h2>Visão geral de encomendas</h2>
+                        <div class="order-admin-filters">
+                            <label>
+                                Data
+                                <input
+                                    v-model="selectedReservationDate"
+                                    type="date"
+                                    aria-label="Filtrar encomendas por data"
+                                />
+                            </label>
+                            <label>
+                                Status
+                                <select v-model="selectedReservationStatus">
+                                    <option value="">Todos</option>
+                                    <option value="aguardando retorno">Aguardando retorno</option>
+                                    <option value="pedido confirmado">Pedido confirmado</option>
+                                    <option value="pedido retirado">Pedido retirado</option>
+                                    <option value="pedido cancelado">Pedido cancelado</option>
+                                </select>
+                            </label>
+                            <label>
+                                Número da encomenda
+                                <input
+                                    v-model="reservationNumberSearch"
+                                    type="search"
+                                    inputmode="numeric"
+                                    placeholder="Digite o número"
+                                />
+                            </label>
+                            <label>
+                                Ordenar
+                                <select v-model="reservationSort">
+                                    <option value="newest">Mais recentes primeiro</option>
+                                    <option value="oldest">Mais antigas primeiro</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="order-admin-row eyebrow">
+                            <span>Número</span>
+                            <span>Cliente</span>
+                            <span>Status</span>
+                            <span>Ações</span>
+                        </div>
+                        <div
+                            v-for="reservation in adminReservations"
+                            :key="reservation.number"
+                            class="order-admin-row"
+                        >
+                            <span>{{ reservation.number }}</span>
+                            <span>
+                                {{ reservation.name }}<br />
+                                <small>{{ reservation.phone }}</small>
+                            </span>
+                            <select
+                                :value="reservation.status"
+                                :aria-label="`Status da encomenda ${reservation.number}`"
+                                @change="
+                                    updateOrderStatus(
+                                        reservation,
+                                        ($event.target as HTMLSelectElement).value,
+                                    )
+                                "
+                            >
+                                <option value="aguardando retorno">Aguardando retorno</option>
+                                <option value="pedido confirmado">Pedido confirmado</option>
+                                <option value="pedido retirado">Pedido retirado</option>
+                                <option value="pedido cancelado">Pedido cancelado</option>
+                            </select>
+                            <button
+                                class="button button-small"
+                                type="button"
+                                @click="openReservationEditor(reservation)"
+                            >
+                                Editar
+                            </button>
+                        </div>
+                        <p v-if="!adminReservations.length" class="muted small">
+                            Ainda não há encomendas realizadas.
+                        </p>
+                    </section>
                 </div>
             </section>
         </main>
@@ -2352,6 +2785,67 @@ onBeforeUnmount(() => {
             aria-live="polite"
         >
             {{ toastMessage }}
+        </div>
+        <div
+            v-if="editingReservation"
+            class="reservation-modal-backdrop"
+            role="presentation"
+            @click.self="closeReservationEditor"
+        >
+            <section
+                class="reservation-modal card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="reservation-modal-title"
+            >
+                <div class="reservation-modal-header">
+                    <h2 id="reservation-modal-title">
+                        Editar encomenda #{{ editingReservation.number }}
+                    </h2>
+                    <button
+                        type="button"
+                        aria-label="Fechar edição"
+                        @click="closeReservationEditor"
+                    >
+                        ×
+                    </button>
+                </div>
+                <form class="form-grid" @submit.prevent="saveReservation">
+                    <div class="field">
+                        <label for="reservation-status">Status</label>
+                        <select id="reservation-status" v-model="reservationForm.status">
+                            <option value="aguardando retorno">Aguardando retorno</option>
+                            <option value="pedido confirmado">Pedido confirmado</option>
+                            <option value="pedido retirado">Pedido retirado</option>
+                            <option value="pedido cancelado">Pedido cancelado</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="reservation-date">Data de retirada</label>
+                        <input id="reservation-date" v-model="reservationForm.scheduled_date" type="date" required />
+                    </div>
+                    <div class="field">
+                        <label for="reservation-time">Horário de retirada</label>
+                        <input id="reservation-time" v-model="reservationForm.scheduled_time" type="text" pattern="^([01]\d|2[0-3]):[0-5]\d$" required />
+                    </div>
+                    <div class="field">
+                        <label for="reservation-value">Valor</label>
+                        <input id="reservation-value" v-model.number="reservationForm.value" type="number" min="0" step="0.01" />
+                    </div>
+                    <div class="field">
+                        <label for="reservation-detail">Detalhamento</label>
+                        <textarea id="reservation-detail" v-model="reservationForm.detail" maxlength="2000"></textarea>
+                    </div>
+                    <div class="reservation-modal-actions">
+                        <button class="button" type="button" @click="closeReservationEditor">
+                            Cancelar
+                        </button>
+                        <button class="button button-dark" type="submit" :disabled="reservationForm.processing">
+                            {{ reservationForm.processing ? 'Salvando...' : 'Salvar alterações' }}
+                        </button>
+                    </div>
+                </form>
+            </section>
         </div>
     </div>
 </template>
