@@ -280,6 +280,12 @@ const total = computed(() =>
 const latestOrder = computed(
     () => props.latestCustomerOrder ?? null,
 );
+const customerOrders = computed(() =>
+    (props.customerOrders ?? []).filter((order) => !order.request),
+);
+const customerReservations = computed(() =>
+    (props.customerOrders ?? []).filter((order) => order.request),
+);
 const trackingSteps = computed(() =>
     latestOrder.value?.request
         ? ['aguardando retorno', 'pedido confirmado', 'pedido retirado']
@@ -1973,8 +1979,8 @@ onBeforeUnmount(() => {
                 </section>
                 <section v-else-if="accountTab === 'pedidos'" class="account-panel card">
                     <h2>Pedidos realizados</h2>
-                    <div v-if="props.customerOrders?.length" class="customer-orders">
-                        <div v-for="order in props.customerOrders" :key="order.number" class="customer-order-row">
+                    <div v-if="customerOrders.length" class="customer-orders">
+                        <div v-for="order in customerOrders" :key="order.number" class="customer-order-row">
                             <div>
                                 <strong>Pedido #{{ order.number }}</strong>
                                 <span class="muted small">{{ order.status }}</span>
@@ -1989,14 +1995,9 @@ onBeforeUnmount(() => {
                 </section>
                 <section v-else class="account-panel card">
                     <h2>Encomendas</h2>
-                    <div
-                        v-if="props.customerOrders?.some((order) => order.request)"
-                        class="customer-orders"
-                    >
+                    <div v-if="customerReservations.length" class="customer-orders">
                         <article
-                            v-for="order in props.customerOrders?.filter(
-                                (item) => item.request,
-                            )"
+                            v-for="order in customerReservations"
                             :key="order.number"
                             class="customer-order-row"
                         >
@@ -2084,14 +2085,19 @@ onBeforeUnmount(() => {
 
             <section v-else class="page-wrap">
                 <div class="admin-page-heading">
-                    <h1 class="page-title">
-                        <img
-                            src="/images/cafe/admin-lock-icon.png"
-                            alt=""
-                            aria-hidden="true"
-                        />
-                        <span>Dashboard administrativo</span>
-                    </h1>
+                    <div class="admin-page-title-group">
+                        <h1 class="page-title">
+                            <img
+                                src="/images/cafe/admin-lock-icon.png"
+                                alt=""
+                                aria-hidden="true"
+                            />
+                            <span>Dashboard administrativo</span>
+                        </h1>
+                        <p class="admin-user-name">
+                            Usuário: {{ props.auth.user?.name }}
+                        </p>
+                    </div>
                     <div class="admin-page-actions">
                         <Link
                             class="button button-dark"
