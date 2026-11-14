@@ -3,6 +3,9 @@ import { Head, Link, router as inertiaRouter, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Pencil, Trash2 } from '@lucide/vue';
 import { useRoute, useRouter } from 'vue-router';
+import { vMaska } from 'maska/vue';
+import { brazilianStateAbbreviations } from '@/data/brazilian-state-abbreviations';
+import PasswordInput from '@/components/PasswordInput.vue';
 import CalendarPicker from '@/components/cafe/CalendarPicker.vue';
 import CafeFooter from '@/components/cafe/CafeFooter.vue';
 import CafeHeader from '@/components/cafe/CafeHeader.vue';
@@ -328,6 +331,12 @@ function formatLocalDate(date: Date): string {
     return `${date.getFullYear()}-${month}-${day}`;
 }
 
+function getLocalTime(): string {
+    const now = new Date();
+
+    return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
 const selectedOrderDate = ref(getLocalDate());
 const orderSort = ref<'newest' | 'oldest'>('newest');
 const selectedOrderStatus = ref('');
@@ -337,6 +346,7 @@ const reservationSort = ref<'newest' | 'oldest'>('newest');
 const selectedReservationStatus = ref('');
 const reservationNumberSearch = ref('');
 const editingReservation = ref<CafeReservation | null>(null);
+const pickupTime = ref(getLocalTime());
 const reservationForm = useForm({
     status: '',
     scheduled_date: '',
@@ -345,6 +355,10 @@ const reservationForm = useForm({
     detail: '',
 });
 watch(page, (currentPage, previousPage) => {
+    if (currentPage === 'pedidos' && previousPage !== 'pedidos') {
+        pickupTime.value = getLocalTime();
+    }
+
     if (currentPage === 'admin' && previousPage !== 'admin') {
         selectedOrderDate.value = getLocalDate();
         orderSort.value = 'newest';
@@ -1181,10 +1195,9 @@ onBeforeUnmount(() => {
                                 </div>
                                 <div class="field">
                                     <label for="login-password">Senha</label>
-                                    <input
+                                    <PasswordInput
                                         id="login-password"
                                         v-model="loginForm.password"
-                                        type="password"
                                         autocomplete="current-password"
                                         required
                                     />
@@ -1428,9 +1441,12 @@ onBeforeUnmount(() => {
                             <input
                                 id="order-time"
                                 name="time"
+                                v-maska="'##:##'"
+                                v-model="pickupTime"
                                 type="text"
                                 inputmode="numeric"
-                                placeholder="Ex.: 14:30"
+                                maxlength="5"
+                                placeholder="00:00"
                                 pattern="^([01]\d|2[0-3]):[0-5]\d$"
                                 title="Informe o horário no formato HH:MM."
                                 required
@@ -1823,7 +1839,10 @@ onBeforeUnmount(() => {
                                         </select>
                                     </div>
                                 </div>
-                                <div class="pix-box">
+                                <div
+                                    v-if="paymentMethod === 'pix'"
+                                    class="pix-box"
+                                >
                                     <strong>PIX (demonstração)</strong>
                                     <div
                                         class="qr-placeholder"
@@ -1844,6 +1863,60 @@ onBeforeUnmount(() => {
                                         <span>Mastercard</span>
                                         <span>PIX</span>
                                     </div>
+                                </div>
+                                <div
+                                    v-else-if="
+                                        paymentMethod === 'credit' ||
+                                        paymentMethod === 'debit'
+                                    "
+                                    class="pix-box card-payment-box"
+                                >
+                                    <strong>Cartão (demonstração)</strong>
+                                    <div class="field">
+                                        <label for="demo-card-number">
+                                            Número do cartão
+                                        </label>
+                                        <input
+                                            id="demo-card-number"
+                                            type="text"
+                                            inputmode="numeric"
+                                            autocomplete="off"
+                                            maxlength="19"
+                                            placeholder="0000 0000 0000 0000"
+                                        />
+                                    </div>
+                                    <div class="card-payment-details">
+                                        <div class="field">
+                                            <label for="demo-card-expiry">
+                                                Validade
+                                            </label>
+                                            <input
+                                                id="demo-card-expiry"
+                                                type="text"
+                                                inputmode="numeric"
+                                                autocomplete="off"
+                                                maxlength="5"
+                                                placeholder="MM/AA"
+                                            />
+                                        </div>
+                                        <div class="field">
+                                            <label for="demo-card-verification">
+                                                Código verificador
+                                            </label>
+                                            <input
+                                                id="demo-card-verification"
+                                                type="text"
+                                                inputmode="numeric"
+                                                autocomplete="off"
+                                                maxlength="4"
+                                                placeholder="CVV"
+                                            />
+                                        </div>
+                                    </div>
+                                    <p>
+                                        Campos ilustrativos: os dados não serão
+                                        enviados nem armazenados.
+                                    </p>
                                 </div>
                             </div>
                             <div
@@ -1948,12 +2021,32 @@ onBeforeUnmount(() => {
                         </div>
                         <div class="field">
                             <label for="profile-phone">Telefone</label>
-                            <input id="profile-phone" v-model="profileForm.phone" required />
+                            <input
+                                id="profile-phone"
+                                v-maska="{ mask: ['(##) ####-####', '(##) #####-####'] }"
+                                v-model="profileForm.phone"
+                                type="tel"
+                                autocomplete="tel"
+                                inputmode="numeric"
+                                maxlength="15"
+                                placeholder="(11) 99999-9999"
+                                required
+                            />
                             <span v-if="profileForm.errors.phone" class="customer-field-error">{{ profileForm.errors.phone }}</span>
                         </div>
                         <div class="field">
                             <label for="profile-zip">CEP</label>
-                            <input id="profile-zip" v-model="profileForm.zip_code" required />
+                            <input
+                                id="profile-zip"
+                                v-maska="'#####-###'"
+                                v-model="profileForm.zip_code"
+                                autocomplete="postal-code"
+                                inputmode="numeric"
+                                maxlength="9"
+                                pattern="[0-9]{5}-?[0-9]{3}"
+                                placeholder="00000-000"
+                                required
+                            />
                             <span v-if="profileForm.errors.zip_code" class="customer-field-error">{{ profileForm.errors.zip_code }}</span>
                         </div>
                         <div class="field">
@@ -1970,7 +2063,21 @@ onBeforeUnmount(() => {
                         </div>
                         <div class="field">
                             <label for="profile-state">Estado</label>
-                            <input id="profile-state" v-model="profileForm.state" maxlength="2" required />
+                            <select
+                                id="profile-state"
+                                v-model="profileForm.state"
+                                autocomplete="address-level1"
+                                required
+                            >
+                                <option value="" disabled>Selecione o estado</option>
+                                <option
+                                    v-for="state in brazilianStateAbbreviations"
+                                    :key="state"
+                                    :value="state"
+                                >
+                                    {{ state }}
+                                </option>
+                            </select>
                         </div>
                         <button class="button button-dark" type="submit" :disabled="profileForm.processing">
                             {{ profileForm.processing ? 'Salvando...' : 'Salvar alterações' }}

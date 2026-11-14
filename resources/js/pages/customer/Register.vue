@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { vMaska } from 'maska/vue';
+import { brazilianStateAbbreviations } from '@/data/brazilian-state-abbreviations';
+import PasswordInput from '@/components/PasswordInput.vue';
 
 const form = useForm({
     name: '',
@@ -14,7 +16,7 @@ const form = useForm({
     state: '',
     address: '',
 });
-const passwordMinimum = computed(() => (import.meta.env.PROD ? 12 : 8));
+const passwordMinimum = 8;
 
 function submit() {
     form.post('/cadastro', {
@@ -28,8 +30,7 @@ function submit() {
 
     <h1 class="customer-auth-title">Criar conta de cliente</h1>
     <p class="customer-auth-description">
-        Cadastre seus dados para acompanhar seus pedidos. A senha deve ter pelo
-        menos {{ passwordMinimum }} caracteres.
+        Cadastre seus dados para acompanhar seus pedidos.
     </p>
 
     <form class="customer-register-form" @submit.prevent="submit">
@@ -66,10 +67,12 @@ function submit() {
             <label for="customer-phone">Telefone com DDD</label>
             <input
                 id="customer-phone"
+                v-maska="{ mask: ['(##) ####-####', '(##) #####-####'] }"
                 v-model="form.phone"
                 type="tel"
                 autocomplete="tel"
-                maxlength="24"
+                inputmode="numeric"
+                maxlength="15"
                 placeholder="(11) 99999-9999"
                 required
             />
@@ -83,6 +86,7 @@ function submit() {
                 <label for="customer-zip-code">CEP</label>
                 <input
                     id="customer-zip-code"
+                    v-maska="'#####-###'"
                     v-model="form.zip_code"
                     autocomplete="postal-code"
                     inputmode="numeric"
@@ -129,16 +133,21 @@ function submit() {
 
             <div class="field">
                 <label for="customer-state">Estado (UF)</label>
-                <input
+                <select
                     id="customer-state"
                     v-model="form.state"
                     autocomplete="address-level1"
-                    maxlength="2"
-                    pattern="[A-Za-z]{2}"
-                    placeholder="SP"
                     required
-                    @input="form.state = form.state.toUpperCase()"
-                />
+                >
+                    <option value="" disabled>Selecione o estado</option>
+                    <option
+                        v-for="state in brazilianStateAbbreviations"
+                        :key="state"
+                        :value="state"
+                    >
+                        {{ state }}
+                    </option>
+                </select>
                 <span v-if="form.errors.state" class="customer-field-error">
                     {{ form.errors.state }}
                 </span>
@@ -161,10 +170,12 @@ function submit() {
 
         <div class="field">
             <label for="customer-password">Senha</label>
-            <input
+            <span class="muted small">
+                A senha deve ter pelo menos {{ passwordMinimum }} caracteres.
+            </span>
+            <PasswordInput
                 id="customer-password"
                 v-model="form.password"
-                type="password"
                 autocomplete="new-password"
                 :minlength="passwordMinimum"
                 required
@@ -176,10 +187,9 @@ function submit() {
 
         <div class="field">
             <label for="customer-password-confirmation">Confirme a senha</label>
-            <input
+            <PasswordInput
                 id="customer-password-confirmation"
                 v-model="form.password_confirmation"
-                type="password"
                 autocomplete="new-password"
                 :minlength="passwordMinimum"
                 required

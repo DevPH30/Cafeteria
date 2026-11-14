@@ -37,6 +37,19 @@ class CustomerAuthenticationTest extends TestCase
         ]);
     }
 
+    public function test_customer_registration_accepts_an_eight_character_password(): void
+    {
+        $data = $this->validRegistration();
+        $data['password'] = 'Cafe123!';
+        $data['password_confirmation'] = 'Cafe123!';
+
+        $this->post(route('customer.register.store'), $data)
+            ->assertRedirect('/');
+
+        $customer = Customer::query()->where('email', $data['email'])->firstOrFail();
+        $this->assertTrue(Hash::check('Cafe123!', $customer->password));
+    }
+
     public function test_customer_registration_validates_address_and_password_fields(): void
     {
         $data = $this->validRegistration();

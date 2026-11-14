@@ -29,10 +29,21 @@ class CustomerAuthController extends Controller
             'state' => Str::upper(trim((string) $request->input('state'))),
         ]);
 
+        $passwordRule = Password::min(8);
+
+        if (app()->isProduction()) {
+            $passwordRule
+                ->mixedCase()
+                ->letters()
+                ->numbers()
+                ->symbols()
+                ->uncompromised();
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => ['required', 'string', 'max:191'],
             'email' => ['required', 'string', 'email:rfc', 'max:191', 'unique:customers,email'],
-            'password' => ['required', 'string', Password::default() ?? Password::min(8), 'confirmed'],
+            'password' => ['required', 'string', $passwordRule, 'confirmed'],
             'phone' => ['required', 'string', 'max:24', 'regex:/^\+?[0-9\s().-]+$/'],
             'zip_code' => ['required', 'string', 'regex:/^\d{5}-?\d{3}$/'],
             'neighborhood' => ['required', 'string', 'max:120'],
